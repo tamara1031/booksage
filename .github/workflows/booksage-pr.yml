@@ -1,0 +1,83 @@
+name: BookSage PR
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'booksage/**'
+      - '.github/workflows/booksage-pr.yml'
+      - 'Makefile'
+      - 'deploy/**'
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.7'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: '29.3'
+      - name: Install Proto Plugins
+        run: make proto-install-deps
+      - name: Generate Proto
+        run: make proto-gen
+
+      - name: Check Tidy
+        run: make tidy
+
+      # Check dirty status after tidy/proto-gen
+      - name: Verify Tidy Status
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Working directory is dirty. Please run 'make tidy' and 'make proto-gen' locally and commit."
+            git status
+            exit 1
+          fi
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          install-mode: goinstall
+          working-directory: booksage/api
+
+      - name: Run Lint
+        run: make -C booksage lint
+
+  test-small:
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.7'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: '29.3'
+      - name: Install Proto Plugins
+        run: make proto-install-deps
+      - name: Generate Proto
+        run: make proto-gen
+      - name: Run Small Tests
+        run: make -C booksage test-small
