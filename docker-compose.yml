@@ -1,8 +1,8 @@
 services:
   api:
     build:
-      context: ..
-      dockerfile: booksage/api/Dockerfile
+      context: ./booksage
+      dockerfile: api/Dockerfile
     ports:
       - "8080:8080"
     environment:
@@ -29,8 +29,8 @@ services:
 
   worker:
     build:
-      context: ..
-      dockerfile: booksage/worker/Dockerfile
+      context: ./booksage
+      dockerfile: worker/Dockerfile
     ports:
       - "50051:50051"
     restart: unless-stopped
@@ -43,7 +43,7 @@ services:
 
   bookscout:
     build:
-      context: ..
+      context: .
       dockerfile: bookscout/Dockerfile
     environment:
       - BS_API_BASE_URL=${BS_API_BASE_URL:-http://api:8080/api/v1}
