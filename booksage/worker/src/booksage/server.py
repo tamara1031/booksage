@@ -90,9 +90,12 @@ class BookSageWorker(
         file_data = b"".join(file_chunks)
         logging.info(f"Received {len(file_data)} bytes for document {metadata.document_id}")
 
-        # Save to temporary file. This is crucial as many ETL libraries (like Docling/PyMuPDF)
-        # expect file paths rather than in-memory byte buffers.
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        # Extract the file extension from the filename, default to .txt if none
+        _, ext = os.path.splitext(metadata.filename)
+        if not ext:
+            ext = ".txt"
+            
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
             tmp_file.write(file_data)
             tmp_file_path = tmp_file.name
 
