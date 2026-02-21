@@ -8,19 +8,18 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import grpc
 
 from booksage.config import load
-from booksage.pb.booksage.v1 import booksage_pb2, booksage_pb2_grpc
 
 # ============================================================================
 # Dummy Interfaces for Dependency Injection
 # These represent the heavy CPU/GPU-bound tasks implemented in outer modules
 # (e.g., etl/ and generation/) and will be injected into the server.
 # ============================================================================
-
-
 from booksage.domain.models import DocumentMetadata
 from booksage.etl.epub_adapter import EpubParser
-from booksage.etl.pymupdf_adapter import PyMuPDFParser
 from booksage.etl.ports import IDocumentParser
+from booksage.etl.pymupdf_adapter import PyMuPDFParser
+from booksage.pb.booksage.v1 import booksage_pb2, booksage_pb2_grpc
+
 
 class DocumentParser:
     def __init__(self):
@@ -51,12 +50,15 @@ class DocumentParser:
             extra_attributes={"file_type": file_type},
         )
 
-        logging.info(f"Starting actual ETL parsing for {file_path} using {parser.__class__.__name__}")
-        
+        logging.info(
+            f"Starting actual ETL parsing for {file_path} using {parser.__class__.__name__}"
+        )
+
         # Execute the parse
         raw_doc = parser.parse_file(file_path, metadata)
 
-        # Convert the RawDocument Pydantic model into the dictionary format expected by the gRPC handler
+        # Convert the RawDocument Pydantic model into the dictionary format
+        # expected by the gRPC handler
         return {
             "document_id": document_id,
             "extracted_metadata": raw_doc.metadata,
@@ -92,15 +94,17 @@ class EmbeddingGenerator:
             return {"results": [], "total_tokens": 0}
 
         model = self._get_model()
-        logging.info(f"Starting actual embedding generation for {len(texts)} chunks using {self.model_name}")
-        
+        logging.info(
+            f"Starting actual embedding generation for {len(texts)} chunks using {self.model_name}"
+        )
+
         # Calculate embeddings
         embeddings = model.encode(texts, convert_to_numpy=True)
         
         # Optional: handling sparse vs dense if embedding_type is different, but for now we do dense
         results = [
-            {"text": text, "dense": vector.tolist()} 
-            for text, vector in zip(texts, embeddings)
+            {"text": text, "dense": vector.tolist()}
+            for text, vector in zip(texts, embeddings, strict=False)
         ]
 
         # Approximate token count (simplified)
