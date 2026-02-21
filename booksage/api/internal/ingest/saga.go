@@ -10,12 +10,14 @@ import (
 type QdrantClient interface {
 	InsertChunks(ctx context.Context, docID string, chunks []any) error
 	DeleteDocument(ctx context.Context, docID string) error
+	DocumentExists(ctx context.Context, docID string) (bool, error)
 }
 
 // Neo4jClient defines the interface for Graph DB operations
 type Neo4jClient interface {
 	InsertNodesAndEdges(ctx context.Context, docID string, nodes []any) error
 	DeleteDocumentNodes(ctx context.Context, docID string) error
+	DocumentExists(ctx context.Context, docID string) (bool, error)
 }
 
 // Orchestrator orchestrates the ingestion process ensuring consistency via the Saga pattern.
@@ -61,4 +63,19 @@ func (o *Orchestrator) RunIngestionSaga(ctx context.Context, docID string, chunk
 
 	log.Printf("[Saga Orchestrator] Ingestion completed successfully for document: %s", docID)
 	return nil
+}
+
+// DocumentExists checks if the document has already been ingested in both databases.
+func (o *Orchestrator) DocumentExists(ctx context.Context, docID string) (bool, error) {
+	qExists, err := o.qdrant.DocumentExists(ctx, docID)
+	if err != nil {
+		return false, fmt.Errorf("failed to check Qdrant for existence: %w", err)
+	}
+	nExists, err := o.neo4j.DocumentExists(ctx, docID)
+	if err != nil {
+		return false, fmt.Errorf("failed to check Neo4j for existence: %w", err)
+	}
+
+	// Consider it exists if it's in either, to prevent partial or duplicate inserts
+	return qExists || nExists, nil
 }

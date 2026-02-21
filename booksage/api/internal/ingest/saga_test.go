@@ -19,6 +19,9 @@ func (m *mockQdrant) DeleteDocument(ctx context.Context, docID string) error {
 	m.deleted = true
 	return m.deleteErr
 }
+func (m *mockQdrant) DocumentExists(ctx context.Context, docID string) (bool, error) {
+	return false, nil
+}
 
 type mockNeo4j struct {
 	insertErr error
@@ -30,6 +33,9 @@ func (m *mockNeo4j) InsertNodesAndEdges(ctx context.Context, docID string, nodes
 }
 func (m *mockNeo4j) DeleteDocumentNodes(ctx context.Context, docID string) error {
 	return m.deleteErr
+}
+func (m *mockNeo4j) DocumentExists(ctx context.Context, docID string) (bool, error) {
+	return false, nil
 }
 
 func TestSaga_Success(t *testing.T) {

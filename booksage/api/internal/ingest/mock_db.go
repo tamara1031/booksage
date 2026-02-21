@@ -24,6 +24,13 @@ func (m *MockQdrantClient) DeleteDocument(ctx context.Context, docID string) err
 	return nil
 }
 
+func (m *MockQdrantClient) DocumentExists(ctx context.Context, docID string) (bool, error) {
+	if docID == "registered.txt" {
+		return true, nil
+	}
+	return false, nil
+}
+
 // MockNeo4jClient provides a simple mock of the graph DB for Saga testing
 type MockNeo4jClient struct{}
 
@@ -41,4 +48,11 @@ func (m *MockNeo4jClient) InsertNodesAndEdges(ctx context.Context, docID string,
 func (m *MockNeo4jClient) DeleteDocumentNodes(ctx context.Context, docID string) error {
 	log.Printf("[MockNeo4j] Deleted nodes for doc %s", docID)
 	return nil
+}
+
+func (m *MockNeo4jClient) DocumentExists(ctx context.Context, docID string) (bool, error) {
+	if docID == "registered.txt" {
+		return true, nil
+	}
+	return false, nil
 }

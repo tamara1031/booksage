@@ -117,6 +117,23 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	// Determine document_id (mock logic: same as returned in JSON)
 	docID := "doc-" + header.Filename
 
+	// Check if document already exists to prevent duplicate ingestion
+	exists, err := s.ingestSaga.DocumentExists(r.Context(), docID)
+	if err != nil {
+		log.Printf("[Server] Error checking document existence for %s: %v", docID, err)
+		http.Error(w, "Failed to verify document status", http.StatusInternalServerError)
+		return
+	}
+	if exists {
+		log.Printf("[Server] Document %s already exists, skipping ingestion", docID)
+		w.WriteHeader(http.StatusConflict) // 409 Conflict means it's already there
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"document_id": docID,
+			"status":      "completed",
+		})
+		return
+	}
+
 	// Open gRPC stream to parser worker
 	stream, err := s.parserClient.Parse(r.Context())
 	if err != nil {
@@ -255,6 +272,7 @@ func (s *Server) handleDocumentStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleDocumentExist is used for the HEAD request to check if a document is already indexed.
 func (s *Server) handleDocumentExist(w http.ResponseWriter, r *http.Request) {
 	docID := r.PathValue("document_id")
 	if docID == "" {
@@ -262,10 +280,12 @@ func (s *Server) handleDocumentExist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mocking registration check:
-	// Always return false (not found) for now so that bookscout can ingest all books.
-	// In real life, we check Neo4j or Qdrant.
-	exists := false
+	exists, err := s.ingestSaga.DocumentExists(r.Context(), docID)
+	if err != nil {
+		log.Printf("[Server] Failed checking DB for document %s: %v", docID, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
 	if !exists {
 		w.WriteHeader(http.StatusNotFound)
