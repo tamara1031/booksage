@@ -3,7 +3,7 @@ import logging
 import os
 import tempfile
 from collections.abc import AsyncIterable
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
 import grpc
 
@@ -17,41 +17,96 @@ from booksage.pb.booksage.v1 import booksage_pb2, booksage_pb2_grpc
 # ============================================================================
 
 
+from booksage.domain.models import DocumentMetadata
+from booksage.etl.epub_adapter import EpubParser
+from booksage.etl.pymupdf_adapter import PyMuPDFParser
+from booksage.etl.ports import IDocumentParser
+
 class DocumentParser:
+    def __init__(self):
+        # Setup the router/registry of parsers based on extension
+        self.parsers: dict[str, IDocumentParser] = {
+            ".pdf": PyMuPDFParser(),
+            ".epub": EpubParser(),
+        }
+
     def parse(self, file_path: str, file_type: str, document_id: str) -> dict:
         """
-        Mock implementation of the CPU-heavy PDF parsing (e.g., using Docling/PyMuPDF).
+        Routes the file to the appropriate ETL parser based on file extension.
         """
-        import time
+        import os
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lower()
 
-        logging.info(f"Starting heavy ETL parsing for {file_path} (type: {file_type})")
-        time.sleep(2)  # Simulate CPU-bound work
+        parser = self.parsers.get(ext)
+        if not parser:
+            logger = logging.getLogger(__name__)
+            logger.warning(f"No specific parser found for extension {ext}, using PyMuPDF fallback.")
+            parser = PyMuPDFParser()
 
+        # Build basic domain metadata object
+        metadata = DocumentMetadata(
+            book_id=document_id,
+            title=os.path.basename(file_path),
+            extra_attributes={"file_type": file_type},
+        )
+
+        logging.info(f"Starting actual ETL parsing for {file_path} using {parser.__class__.__name__}")
+        
+        # Execute the parse
+        raw_doc = parser.parse_file(file_path, metadata)
+
+        # Convert the RawDocument Pydantic model into the dictionary format expected by the gRPC handler
         return {
             "document_id": document_id,
-            "extracted_metadata": {"status": "mock_success"},
+            "extracted_metadata": raw_doc.metadata,
             "documents": [
                 {
-                    "content": f"# Mock Parsed Content for {file_type}",
-                    "type": "text",
-                    "page_number": 1,
+                    "content": el.content,
+                    "type": el.type,
+                    "page_number": el.page_number,
                 }
+                for el in raw_doc.elements
             ],
         }
 
 
 class EmbeddingGenerator:
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+        # Load model lazily or at init depending on memory needs
+        # In a real heavy environment, maybe we load at __init__ to warm up
+        self.model_name = model_name
+        self._model = None
+
+    def _get_model(self):
+        if self._model is None:
+            from sentence_transformers import SentenceTransformer
+            self._model = SentenceTransformer(self.model_name)
+        return self._model
+
     def generate(self, texts: list[str], embedding_type: str, task_type: str) -> dict:
         """
-        Mock implementation of the GPU/CPU-heavy tensor calculations (PyTorch).
+        Implementation of the GPU/CPU-heavy tensor calculations using sentence-transformers.
         """
-        import time
+        if not texts:
+            return {"results": [], "total_tokens": 0}
 
-        logging.info(f"Starting heavy embedding generation for {len(texts)} chunks")
-        time.sleep(1)  # Simulate GPU/CPU-bound work
+        model = self._get_model()
+        logging.info(f"Starting actual embedding generation for {len(texts)} chunks using {self.model_name}")
+        
+        # Calculate embeddings
+        embeddings = model.encode(texts, convert_to_numpy=True)
+        
+        # Optional: handling sparse vs dense if embedding_type is different, but for now we do dense
+        results = [
+            {"text": text, "dense": vector.tolist()} 
+            for text, vector in zip(texts, embeddings)
+        ]
 
-        results = [{"text": text, "dense": [0.1] * 768} for text in texts]
-        return {"results": results, "total_tokens": len(texts) * 10}
+        # Approximate token count (simplified)
+        total_tokens = sum(len(text.split()) for text in texts) * 2
+        
+        return {"results": results, "total_tokens": total_tokens}
 
 
 # ============================================================================
@@ -63,11 +118,16 @@ class BookSageWorker(
     booksage_pb2_grpc.DocumentParserServiceServicer, booksage_pb2_grpc.EmbeddingServiceServicer
 ):
     def __init__(
-        self, parser: DocumentParser, embedder: EmbeddingGenerator, executor: ProcessPoolExecutor
+        self,
+        parser: DocumentParser,
+        embedder: EmbeddingGenerator,
+        cpu_executor: ProcessPoolExecutor,
+        gpu_executor: ThreadPoolExecutor,
     ):
         self.parser = parser
         self.embedder = embedder
-        self.executor = executor
+        self.cpu_executor = cpu_executor
+        self.gpu_executor = gpu_executor
 
     async def Parse(  # noqa: N802
         self,
@@ -95,7 +155,7 @@ class BookSageWorker(
             # Offloading CPU-bound operations
             loop = asyncio.get_running_loop()
             response_dict = await loop.run_in_executor(
-                self.executor,
+                self.cpu_executor,
                 self.parser.parse,
                 tmp_file_path,
                 metadata.file_type,
@@ -177,10 +237,10 @@ class BookSageWorker(
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "No texts provided for embedding")
 
         try:
-            # 【最重要】 offloading CPU/GPU-bound operations
+            # 【最重要】 offloading GPU-bound operations to ThreadPoolExecutor for CUDA safety
             loop = asyncio.get_running_loop()
             response_dict = await loop.run_in_executor(
-                self.executor,
+                self.gpu_executor,
                 self.embedder.generate,
                 list(request.texts),
                 request.embedding_type,
@@ -220,11 +280,20 @@ async def serve():
     parser = DocumentParser()
     embedder = EmbeddingGenerator()
 
-    # Initialize the ProcessPoolExecutor for heavy lifting tasks
+    # Initialize the ProcessPoolExecutor for heavy CPU lifting tasks
     # Defaults to os.cpu_count() workers
-    executor = ProcessPoolExecutor(max_workers=config.max_workers)
+    cpu_executor = ProcessPoolExecutor(max_workers=config.max_workers)
 
-    worker = BookSageWorker(parser=parser, embedder=embedder, executor=executor)
+    # Initialize Context-safe ThreadPoolExecutor for PyTorch/GPU tasks
+    # Defaults to max 4 to avoid OOM on GPUs
+    gpu_executor = ThreadPoolExecutor(max_workers=min(4, config.max_workers))
+
+    worker = BookSageWorker(
+        parser=parser,
+        embedder=embedder,
+        cpu_executor=cpu_executor,
+        gpu_executor=gpu_executor,
+    )
 
     booksage_pb2_grpc.add_DocumentParserServiceServicer_to_server(worker, server)
     booksage_pb2_grpc.add_EmbeddingServiceServicer_to_server(worker, server)
@@ -233,7 +302,7 @@ async def serve():
 
     logging.info(
         f"Starting BookSage worker gRPC server on {config.worker_listen_addr} "
-        f"with {executor._max_workers} processes"
+        f"with {cpu_executor._max_workers} CPU procs and {gpu_executor._max_workers} GPU threads"
     )
     await server.start()
 
@@ -242,8 +311,9 @@ async def serve():
     except asyncio.CancelledError:
         logging.info("Shutting down worker server...")
     finally:
-        # Graceful shutdown of the process pool
-        executor.shutdown(wait=True)
+        # Graceful shutdown of the executors
+        cpu_executor.shutdown(wait=True)
+        gpu_executor.shutdown(wait=True)
 
 
 if __name__ == "__main__":

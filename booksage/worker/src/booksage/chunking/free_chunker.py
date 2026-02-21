@@ -15,28 +15,29 @@ class FreeChunker(IChunker):
 
     def create_chunks(self, document: RawDocument) -> list[Chunk]:
         chunks = []
-        text = document.text
-        start = 0
 
-        if not text:
-            return chunks
+        for element in document.elements:
+            text = element.content
+            if not text:
+                continue
 
-        while start < len(text):
-            end = min(start + self.chunk_size, len(text))
-            content = text[start:end]
+            start = 0
+            while start < len(text):
+                end = min(start + self.chunk_size, len(text))
+                content = text[start:end]
 
-            chunks.append(
-                Chunk(
-                    chunk_id=str(uuid.uuid4()),
-                    document_id=document.document_id,
-                    content=content,
-                    metadata=document.metadata,
+                chunks.append(
+                    Chunk(
+                        chunk_id=str(uuid.uuid4()),
+                        document_id=document.document_id,
+                        content=content,
+                        metadata=document.domain_metadata,
+                    )
                 )
-            )
 
-            if end == len(text):
-                break
+                if end == len(text):
+                    break
 
-            start += self.chunk_size - self.chunk_overlap
+                start += self.chunk_size - self.chunk_overlap
 
         return chunks

@@ -15,8 +15,9 @@ def test_pymupdf_fallback():
         parser = PyMuPDFParser()
         meta = DocumentMetadata(book_id="1", title="Test Book")
         doc = parser.parse_file("dummy.pdf", meta)
-        assert doc.metadata.book_id == "1"
-        assert "Mock text" in doc.text
+        assert doc.domain_metadata.book_id == "1"
+        assert len(doc.elements) > 0
+        assert "Mock text" in doc.elements[0].content
 
 
 def test_docling_fallback():
@@ -28,5 +29,6 @@ def test_docling_fallback():
         parser = DoclingParser()
         meta = DocumentMetadata(book_id="2", title="Test Book")
         doc = parser.parse_file("dummy.pdf", meta)
-        assert doc.metadata.book_id == "2"
-        assert "Mock text" in doc.text
+        assert doc.domain_metadata.book_id == "2"
+        assert len(doc.elements) > 0
+        assert "Mock text" in doc.elements[0].content

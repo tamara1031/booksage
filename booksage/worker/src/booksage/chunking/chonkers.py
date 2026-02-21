@@ -22,27 +22,28 @@ class ChonkersChunker(IChunker):
     def create_chunks(self, document: RawDocument) -> list[Chunk]:
         # For mock testability, just do simple splits but assign an index_locality_hash
         chunks = []
-        text = document.text
-        start = 0
 
-        if not text:
-            return chunks
+        for element in document.elements:
+            text = element.content
+            if not text:
+                continue
 
-        while start < len(text):
-            # Simulated CDC boundary search
-            end = min(start + self.target_chunk_size, len(text))
-            content = text[start:end]
+            start = 0
+            while start < len(text):
+                # Simulated CDC boundary search
+                end = min(start + self.target_chunk_size, len(text))
+                content = text[start:end]
 
-            chunks.append(
-                Chunk(
-                    chunk_id=str(uuid.uuid4()),
-                    document_id=document.document_id,
-                    content=content,
-                    metadata=document.metadata,
-                    index_locality_hash=self._compute_locality_hash(content),
+                chunks.append(
+                    Chunk(
+                        chunk_id=str(uuid.uuid4()),
+                        document_id=document.document_id,
+                        content=content,
+                        metadata=document.domain_metadata,
+                        index_locality_hash=self._compute_locality_hash(content),
+                    )
                 )
-            )
 
-            start = end
+                start = end
 
         return chunks
