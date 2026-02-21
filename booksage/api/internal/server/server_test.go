@@ -2,16 +2,20 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
+	"google.golang.org/grpc"
 )
 
 func TestHandleQuery_InvalidPayload(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, &mockParserClient{}, nil)
 	ts := httptest.NewServer(s.RegisterRoutes())
 	defer ts.Close()
 
@@ -26,7 +30,7 @@ func TestHandleQuery_InvalidPayload(t *testing.T) {
 }
 
 func TestHandleQuery_EmptyQuery(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, &mockParserClient{}, nil)
 	ts := httptest.NewServer(s.RegisterRoutes())
 	defer ts.Close()
 
@@ -47,7 +51,7 @@ type mockNonFlusherRW struct {
 }
 
 func TestHandleQuery_NonFlusher(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, &mockParserClient{}, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader(`{"query":"test"}`))
 
 	// Create a recorder which does NOT implement http.Flusher in this mocked version
@@ -67,7 +71,7 @@ func TestHandleQuery_NonFlusher(t *testing.T) {
 }
 
 func TestHandleIngest(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, &mockParserClient{}, nil)
 	ts := httptest.NewServer(s.RegisterRoutes())
 	defer ts.Close()
 
@@ -112,7 +116,7 @@ func TestHandleIngest(t *testing.T) {
 }
 
 func TestHandleIngest_Conflict(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, &mockParserClient{}, nil)
 	ts := httptest.NewServer(s.RegisterRoutes())
 	defer ts.Close()
 
@@ -138,7 +142,7 @@ func TestHandleIngest_Conflict(t *testing.T) {
 }
 
 func TestHandleDocumentStatus(t *testing.T) {
-	s := NewServer(nil, nil, nil, nil)
+	s := NewServer(nil, nil, &mockParserClient{}, nil)
 	ts := httptest.NewServer(s.RegisterRoutes())
 	defer ts.Close()
 
@@ -155,4 +159,22 @@ func TestHandleDocumentStatus(t *testing.T) {
 	if data["document_id"] != "123" {
 		t.Errorf("expected doc ID 123, got %v", data["document_id"])
 	}
+}
+
+type mockParserClient struct{}
+
+func (m *mockParserClient) Parse(ctx context.Context, opts ...grpc.CallOption) (pb.DocumentParserService_ParseClient, error) {
+	return &mockParseClientStream{}, nil
+}
+
+type mockParseClientStream struct {
+	grpc.ClientStream
+}
+
+func (m *mockParseClientStream) Send(req *pb.ParseRequest) error {
+	return nil
+}
+
+func (m *mockParseClientStream) CloseAndRecv() (*pb.ParseResponse, error) {
+	return &pb.ParseResponse{DocumentId: "mock-doc-id"}, nil
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -106,7 +107,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing 'file' parameter", http.StatusBadRequest)
 		return
 	}
-	_ = file.Close()
+	defer file.Close()
 
 	// Retrieve metadata
 	metadataStr := r.FormValue("metadata")
@@ -115,14 +116,68 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	// Determine document_id (mock logic: same as returned in JSON)
 	docID := "doc-" + header.Filename
 
-	// Removed mock conflict check so bookscout can upload all books
+	// Open gRPC stream to parser worker
+	stream, err := s.parserClient.Parse(r.Context())
+	if err != nil {
+		log.Printf("[Server] Failed to open Parse stream: %v", err)
+		http.Error(w, "Failed to communicate with parsing worker", http.StatusInternalServerError)
+		return
+	}
 
-	// In a complete implementation, we would stream this `file` to `s.parserClient.Parse`
-	// via gRPC and return a generated document_id in the 202 Accepted response.
+	// 1. Send metadata
+	if err := stream.Send(&pb.ParseRequest{
+		Payload: &pb.ParseRequest_Metadata{
+			Metadata: &pb.DocumentMetadata{
+				Filename:   header.Filename,
+				FileType:   header.Header.Get("Content-Type"),
+				DocumentId: docID,
+			},
+		},
+	}); err != nil {
+		log.Printf("[Server] Failed to send metadata: %v", err)
+		http.Error(w, "Internal error sending data", http.StatusInternalServerError)
+		return
+	}
+
+	// 2. Stream chunks (1MB chunks)
+	buffer := make([]byte, 1024*1024)
+	for {
+		n, err := file.Read(buffer)
+		if n > 0 {
+			if sendErr := stream.Send(&pb.ParseRequest{
+				Payload: &pb.ParseRequest_ChunkData{
+					ChunkData: buffer[:n],
+				},
+			}); sendErr != nil {
+				log.Printf("[Server] Failed to send chunk: %v", sendErr)
+				http.Error(w, "Internal error sending data", http.StatusInternalServerError)
+				return
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Printf("[Server] Error reading file: %v", err)
+			http.Error(w, "Error reading uploaded file", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// 3. Receive response from worker
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		log.Printf("[Server] Worker returned error: %v", err)
+		http.Error(w, "Worker processing failed", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[Server] Successfully parsed document %s. Received %d elements.", resp.DocumentId, len(resp.Documents))
+
 	w.WriteHeader(http.StatusAccepted)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"document_id": docID,
+		"document_id": resp.DocumentId,
 		"status":      "processing",
 	})
 }
