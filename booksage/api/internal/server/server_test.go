@@ -10,12 +10,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/booksage/booksage-api/internal/embedding"
+	"github.com/booksage/booksage-api/internal/ingest"
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
 	"google.golang.org/grpc"
 )
 
+func createTestServer() *Server {
+	embedBatcher := embedding.NewBatcher(&mockEmbeddingClient{}, 100)
+	saga := ingest.NewOrchestrator(ingest.NewMockQdrantClient(), ingest.NewMockNeo4jClient())
+	return NewServer(nil, embedBatcher, &mockParserClient{}, saga)
+}
+
 func TestHandleQuery_InvalidPayload(t *testing.T) {
-	s := NewServer(nil, nil, &mockParserClient{}, nil)
+	s := createTestServer()
 	ts := httptest.NewServer(s.RegisterRoutes())
 	defer ts.Close()
 
@@ -30,7 +38,7 @@ func TestHandleQuery_InvalidPayload(t *testing.T) {
 }
 
 func TestHandleQuery_EmptyQuery(t *testing.T) {
-	s := NewServer(nil, nil, &mockParserClient{}, nil)
+	s := createTestServer()
 	ts := httptest.NewServer(s.RegisterRoutes())
 	defer ts.Close()
 
@@ -51,7 +59,7 @@ type mockNonFlusherRW struct {
 }
 
 func TestHandleQuery_NonFlusher(t *testing.T) {
-	s := NewServer(nil, nil, &mockParserClient{}, nil)
+	s := createTestServer()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader(`{"query":"test"}`))
 
 	// Create a recorder which does NOT implement http.Flusher in this mocked version
@@ -71,7 +79,7 @@ func TestHandleQuery_NonFlusher(t *testing.T) {
 }
 
 func TestHandleIngest(t *testing.T) {
-	s := NewServer(nil, nil, &mockParserClient{}, nil)
+	s := createTestServer()
 	ts := httptest.NewServer(s.RegisterRoutes())
 	defer ts.Close()
 
@@ -116,7 +124,7 @@ func TestHandleIngest(t *testing.T) {
 }
 
 func TestHandleIngest_Conflict(t *testing.T) {
-	s := NewServer(nil, nil, &mockParserClient{}, nil)
+	s := createTestServer()
 	ts := httptest.NewServer(s.RegisterRoutes())
 	defer ts.Close()
 
@@ -142,7 +150,7 @@ func TestHandleIngest_Conflict(t *testing.T) {
 }
 
 func TestHandleDocumentStatus(t *testing.T) {
-	s := NewServer(nil, nil, &mockParserClient{}, nil)
+	s := createTestServer()
 	ts := httptest.NewServer(s.RegisterRoutes())
 	defer ts.Close()
 
@@ -177,4 +185,12 @@ func (m *mockParseClientStream) Send(req *pb.ParseRequest) error {
 
 func (m *mockParseClientStream) CloseAndRecv() (*pb.ParseResponse, error) {
 	return &pb.ParseResponse{DocumentId: "mock-doc-id"}, nil
+}
+
+type mockEmbeddingClient struct{}
+
+func (m *mockEmbeddingClient) GenerateEmbeddings(ctx context.Context, in *pb.EmbeddingRequest, opts ...grpc.CallOption) (*pb.EmbeddingResponse, error) {
+	return &pb.EmbeddingResponse{
+		Results: []*pb.EmbeddingResult{},
+	}, nil
 }

@@ -41,9 +41,7 @@ class DocumentParser:
 
 
 class EmbeddingGenerator:
-    def generate(
-        self, texts: list[str], embedding_type: str, task_type: str
-    ) -> dict:
+    def generate(self, texts: list[str], embedding_type: str, task_type: str) -> dict:
         """
         Mock implementation of the GPU/CPU-heavy tensor calculations (PyTorch).
         """
@@ -52,13 +50,7 @@ class EmbeddingGenerator:
         logging.info(f"Starting heavy embedding generation for {len(texts)} chunks")
         time.sleep(1)  # Simulate GPU/CPU-bound work
 
-        results = [
-            {
-                "text": text,
-                "dense": [0.1] * 768
-            }
-            for text in texts
-        ]
+        results = [{"text": text, "dense": [0.1] * 768} for text in texts]
         return {"results": results, "total_tokens": len(texts) * 10}
 
 
@@ -94,7 +86,7 @@ class BookSageWorker(
         _, ext = os.path.splitext(metadata.filename)
         if not ext:
             ext = ".txt"
-            
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
             tmp_file.write(file_data)
             tmp_file_path = tmp_file.name
@@ -109,19 +101,20 @@ class BookSageWorker(
                 metadata.file_type,
                 metadata.document_id,
             )
-            
+
             # Reconstruct protobuf from the pickleable dict
             documents = [
                 booksage_pb2.RawDocument(
                     content=doc["content"],
                     type=doc["type"],
                     page_number=doc["page_number"],
-                ) for doc in response_dict["documents"]
+                )
+                for doc in response_dict["documents"]
             ]
             response = booksage_pb2.ParseResponse(
                 document_id=response_dict["document_id"],
                 extracted_metadata=response_dict["extracted_metadata"],
-                documents=documents
+                documents=documents,
             )
             logging.info(f"Successfully finished parsing for document {response.document_id}")
             return response
@@ -193,18 +186,16 @@ class BookSageWorker(
                 request.embedding_type,
                 request.task_type,
             )
-            
+
             results = [
                 booksage_pb2.EmbeddingResult(
-                    text=res["text"], 
-                    dense=booksage_pb2.DenseVector(values=res["dense"])
+                    text=res["text"], dense=booksage_pb2.DenseVector(values=res["dense"])
                 )
                 for res in response_dict["results"]
             ]
-            
+
             return booksage_pb2.EmbeddingResponse(
-                results=results, 
-                total_tokens=response_dict["total_tokens"]
+                results=results, total_tokens=response_dict["total_tokens"]
             )
         except grpc.aio.AioRpcError:
             raise

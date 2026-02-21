@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -173,6 +174,52 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("[Server] Successfully parsed document %s. Received %d elements.", resp.DocumentId, len(resp.Documents))
+
+	// 4. Generate embeddings and run ingestion saga asynchronously
+	go func(parsedResp *pb.ParseResponse) {
+		ctx := context.Background() // Use an independent background context for the async job
+
+		// Extract texts for embedding
+		var texts []string
+		for _, doc := range parsedResp.Documents {
+			texts = append(texts, doc.Content)
+		}
+
+		// Generate Embeddings
+		embResults, _, err := s.embedBatcher.GenerateEmbeddingsBatched(ctx, texts, "dense", "retrieval")
+		if err != nil {
+			log.Printf("[Server - Async] Failed to generate embeddings for %s: %v", parsedResp.DocumentId, err)
+			return
+		}
+
+		// Prepare Qdrant Chunks
+		var chunks []any
+		for i, res := range embResults {
+			chunks = append(chunks, map[string]any{
+				"id":     fmt.Sprintf("%s-chunk-%d", parsedResp.DocumentId, i),
+				"text":   res.Text,
+				"vector": res.GetDense().GetValues(),
+			})
+		}
+
+		// Prepare Neo4j Nodes
+		var graphNodes []any
+		for i, doc := range parsedResp.Documents {
+			graphNodes = append(graphNodes, map[string]any{
+				"id":   fmt.Sprintf("%s-node-%d", parsedResp.DocumentId, i),
+				"text": doc.Content,
+				"type": "Chunk",
+			})
+		}
+
+		// Run the Saga Orchestrator
+		if err := s.ingestSaga.RunIngestionSaga(ctx, parsedResp.DocumentId, chunks, graphNodes); err != nil {
+			log.Printf("[Server - Async] Ingestion saga failed for %s: %v", parsedResp.DocumentId, err)
+			return
+		}
+
+		log.Printf("[Server - Async] Successfully completed asynchronous ingestion for %s", parsedResp.DocumentId)
+	}(resp)
 
 	w.WriteHeader(http.StatusAccepted)
 	w.Header().Set("Content-Type", "application/json")
