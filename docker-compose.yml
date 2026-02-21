@@ -6,10 +6,10 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - BS_WORKER_ADDR=${BS_WORKER_ADDR:-worker:50051}
-      - BS_OLLAMA_HOST=${BS_OLLAMA_HOST:-http://ollama:11434}
-      - BS_USE_LOCAL_ONLY_LLM=${BS_USE_LOCAL_ONLY_LLM:-true}
-      - BS_GEMINI_API_KEY=${BS_GEMINI_API_KEY}
+      - SAGE_WORKER_ADDR=${SAGE_WORKER_ADDR:-worker:50051}
+      - SAGE_OLLAMA_HOST=${SAGE_OLLAMA_HOST:-http://ollama:11434}
+      - SAGE_USE_LOCAL_ONLY_LLM=${SAGE_USE_LOCAL_ONLY_LLM:-true}
+      - SAGE_GEMINI_API_KEY=${SAGE_GEMINI_API_KEY}
     restart: unless-stopped
     deploy:
       resources:
@@ -46,8 +46,17 @@ services:
       context: .
       dockerfile: bookscout/Dockerfile
     environment:
-      - BS_API_BASE_URL=${BS_API_BASE_URL:-http://api:8080/api/v1}
-      - BS_OPDS_BASE_URL=${BS_OPDS_BASE_URL:-https://booklore.homelab.otama-playground.com/api/v1/opds}
+      - SCOUT_PORT=${SCOUT_PORT:-8000}
+      - SCOUT_LOG_LEVEL=${SCOUT_LOG_LEVEL:-info}
+      - SCOUT_BOOK_SOURCE_TYPE=${SCOUT_BOOK_SOURCE_TYPE:-opds}
+      - SCOUT_OPDS_BASE_URL=${SCOUT_OPDS_BASE_URL}
+      - SCOUT_OPDS_USERNAME=${SCOUT_OPDS_USERNAME}
+      - SCOUT_OPDS_PASSWORD=${SCOUT_OPDS_PASSWORD}
+      - SCOUT_API_BASE_URL=${SCOUT_API_BASE_URL:-http://api:8080/api/v1}
+      - SCOUT_WORKER_SINCE_TIMESTAMP=${SCOUT_WORKER_SINCE_TIMESTAMP:-0}
+      - SCOUT_WORKER_CONCURRENCY=${SCOUT_WORKER_CONCURRENCY:-5}
+      - SCOUT_WORKER_BATCH_SIZE=${SCOUT_WORKER_BATCH_SIZE:-0}
+      - SCOUT_MAX_BOOK_SIZE_BYTES=${SCOUT_MAX_BOOK_SIZE_BYTES:-52428800}
     depends_on:
       api:
         condition: service_started

@@ -24,7 +24,7 @@ func TestAPISstartup(t *testing.T) {
 	cmdRun := exec.CommandContext(ctx, "./booksage-api-sut")
 	cmdRun.Dir = "../../"
 	// Set environment variables for the test
-	cmdRun.Env = append(os.Environ(), "BS_WORKER_ADDR=localhost:9999") // Mock worker address
+	cmdRun.Env = append(os.Environ(), "SAGE_WORKER_ADDR=localhost:9999") // Mock worker address
 
 	err := cmdRun.Start()
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	// Clear the environment block to test defaults
 	os.Clearenv()
-	_ = os.Setenv("BS_GEMINI_API_KEY", "dummy")
+	_ = os.Setenv("SAGE_GEMINI_API_KEY", "dummy")
 
 	cfg := Load()
 
@@ -41,14 +41,14 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadWithEnvironmentVariables(t *testing.T) {
 	// Setup test environment variables
-	_ = os.Setenv("BS_WORKER_ADDR", "worker:50051")
-	_ = os.Setenv("BS_GEMINI_API_KEY", "test-key")
-	_ = os.Setenv("BS_OLLAMA_HOST", "http://ollama:11434")
-	_ = os.Setenv("BS_OLLAMA_MODEL", "llama2")
-	_ = os.Setenv("BS_USE_LOCAL_ONLY_LLM", "true")
-	_ = os.Setenv("BS_DEFAULT_TIMEOUT_SEC", "45")
-	_ = os.Setenv("BS_EMBEDDING_TIMEOUT_SEC", "10")
-	_ = os.Setenv("BS_PARSER_TIMEOUT_SEC", "120")
+	_ = os.Setenv("SAGE_WORKER_ADDR", "worker:50051")
+	_ = os.Setenv("SAGE_GEMINI_API_KEY", "test-key")
+	_ = os.Setenv("SAGE_OLLAMA_HOST", "http://ollama:11434")
+	_ = os.Setenv("SAGE_OLLAMA_MODEL", "llama2")
+	_ = os.Setenv("SAGE_USE_LOCAL_ONLY_LLM", "true")
+	_ = os.Setenv("SAGE_DEFAULT_TIMEOUT_SEC", "45")
+	_ = os.Setenv("SAGE_EMBEDDING_TIMEOUT_SEC", "10")
+	_ = os.Setenv("SAGE_PARSER_TIMEOUT_SEC", "120")
 	defer os.Clearenv()
 
 	cfg := Load()
@@ -82,8 +82,8 @@ func TestLoadWithEnvironmentVariables(t *testing.T) {
 func TestLoadWithInvalidDuration(t *testing.T) {
 	os.Clearenv()
 	// Setup an invalid duration
-	_ = os.Setenv("BS_DEFAULT_TIMEOUT_SEC", "invalid")
-	_ = os.Setenv("BS_GEMINI_API_KEY", "dummy")
+	_ = os.Setenv("SAGE_DEFAULT_TIMEOUT_SEC", "invalid")
+	_ = os.Setenv("SAGE_GEMINI_API_KEY", "dummy")
 	defer os.Clearenv()
 
 	cfg := Load()
@@ -96,20 +96,20 @@ func TestLoadWithInvalidDuration(t *testing.T) {
 
 func TestGetEnvBoolEdgeCases(t *testing.T) {
 	os.Clearenv()
-	_ = os.Setenv("BS_USE_LOCAL_ONLY_LLM", "1")
-	_ = os.Setenv("BS_GEMINI_API_KEY", "dummy")
+	_ = os.Setenv("SAGE_USE_LOCAL_ONLY_LLM", "1")
+	_ = os.Setenv("SAGE_GEMINI_API_KEY", "dummy")
 	cfg := Load()
 	if !cfg.UseLocalOnlyLLM {
 		t.Errorf("expected UseLocalOnlyLLM to be true for '1', got %v", cfg.UseLocalOnlyLLM)
 	}
 
-	_ = os.Setenv("BS_USE_LOCAL_ONLY_LLM", "TRUE")
+	_ = os.Setenv("SAGE_USE_LOCAL_ONLY_LLM", "TRUE")
 	cfg = Load()
 	if !cfg.UseLocalOnlyLLM {
 		t.Errorf("expected UseLocalOnlyLLM to be true for 'TRUE', got %v", cfg.UseLocalOnlyLLM)
 	}
 
-	_ = os.Setenv("BS_USE_LOCAL_ONLY_LLM", "false")
+	_ = os.Setenv("SAGE_USE_LOCAL_ONLY_LLM", "false")
 	cfg = Load()
 	if cfg.UseLocalOnlyLLM {
 		t.Errorf("expected UseLocalOnlyLLM to be false for 'false', got %v", cfg.UseLocalOnlyLLM)

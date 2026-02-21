@@ -24,10 +24,10 @@ type Config struct {
 // Validate ensures that all required configuration is present and valid.
 func (c *Config) Validate() error {
 	if !c.UseLocalOnlyLLM && c.GeminiAPIKey == "" {
-		return fmt.Errorf("BS_GEMINI_API_KEY is required when BS_USE_LOCAL_ONLY_LLM is false")
+		return fmt.Errorf("SAGE_GEMINI_API_KEY is required when SAGE_USE_LOCAL_ONLY_LLM is false")
 	}
 	if c.WorkerAddr == "" {
-		return fmt.Errorf("BS_WORKER_ADDR is required")
+		return fmt.Errorf("SAGE_WORKER_ADDR is required")
 	}
 	return nil
 }
@@ -35,14 +35,14 @@ func (c *Config) Validate() error {
 // Load reads settings from environment variables with sensible defaults.
 func Load() *Config {
 	cfg := &Config{
-		WorkerAddr:       getEnv("BS_WORKER_ADDR", "localhost:50051"),
-		GeminiAPIKey:     getEnv("BS_GEMINI_API_KEY", ""),
-		OllamaHost:       getEnv("BS_OLLAMA_HOST", "http://localhost:11434"),
-		OllamaModel:      getEnv("BS_OLLAMA_MODEL", "llama3"),
-		UseLocalOnlyLLM:  getEnvBool("BS_USE_LOCAL_ONLY_LLM", false),
-		DefaultTimeout:   getEnvDuration("BS_DEFAULT_TIMEOUT_SEC", 30) * time.Second,
-		EmbeddingTimeout: getEnvDuration("BS_EMBEDDING_TIMEOUT_SEC", 5) * time.Second,
-		ParserTimeout:    getEnvDuration("BS_PARSER_TIMEOUT_SEC", 60) * time.Second,
+		WorkerAddr:       getEnv("SAGE_WORKER_ADDR", "localhost:50051"),
+		GeminiAPIKey:     getEnv("SAGE_GEMINI_API_KEY", ""),
+		OllamaHost:       getEnv("SAGE_OLLAMA_HOST", "http://localhost:11434"),
+		OllamaModel:      getEnv("SAGE_OLLAMA_MODEL", "llama3"),
+		UseLocalOnlyLLM:  getEnvBool("SAGE_USE_LOCAL_ONLY_LLM", false),
+		DefaultTimeout:   getEnvDuration("SAGE_DEFAULT_TIMEOUT_SEC", 30) * time.Second,
+		EmbeddingTimeout: getEnvDuration("SAGE_EMBEDDING_TIMEOUT_SEC", 5) * time.Second,
+		ParserTimeout:    getEnvDuration("SAGE_PARSER_TIMEOUT_SEC", 60) * time.Second,
 	}
 
 	if err := cfg.Validate(); err != nil {
