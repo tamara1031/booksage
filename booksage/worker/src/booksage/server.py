@@ -18,7 +18,7 @@ from booksage.pb.booksage.v1 import booksage_pb2, booksage_pb2_grpc
 
 
 class DocumentParser:
-    def parse(self, file_path: str, file_type: str, document_id: str) -> booksage_pb2.ParseResponse:
+    def parse(self, file_path: str, file_type: str, document_id: str) -> dict:
         """
         Mock implementation of the CPU-heavy PDF parsing (e.g., using Docling/PyMuPDF).
         """
@@ -27,23 +27,23 @@ class DocumentParser:
         logging.info(f"Starting heavy ETL parsing for {file_path} (type: {file_type})")
         time.sleep(2)  # Simulate CPU-bound work
 
-        return booksage_pb2.ParseResponse(
-            document_id=document_id,
-            extracted_metadata={"status": "mock_success"},
-            documents=[
-                booksage_pb2.RawDocument(
-                    content=f"# Mock Parsed Content for {file_type}",
-                    type="text",
-                    page_number=1,
-                )
+        return {
+            "document_id": document_id,
+            "extracted_metadata": {"status": "mock_success"},
+            "documents": [
+                {
+                    "content": f"# Mock Parsed Content for {file_type}",
+                    "type": "text",
+                    "page_number": 1,
+                }
             ],
-        )
+        }
 
 
 class EmbeddingGenerator:
     def generate(
         self, texts: list[str], embedding_type: str, task_type: str
-    ) -> booksage_pb2.EmbeddingResponse:
+    ) -> dict:
         """
         Mock implementation of the GPU/CPU-heavy tensor calculations (PyTorch).
         """
@@ -53,12 +53,13 @@ class EmbeddingGenerator:
         time.sleep(1)  # Simulate GPU/CPU-bound work
 
         results = [
-            booksage_pb2.EmbeddingResult(
-                text=text, dense=booksage_pb2.DenseVector(values=[0.1] * 768)
-            )
+            {
+                "text": text,
+                "dense": [0.1] * 768
+            }
             for text in texts
         ]
-        return booksage_pb2.EmbeddingResponse(results=results, total_tokens=len(texts) * 10)
+        return {"results": results, "total_tokens": len(texts) * 10}
 
 
 # ============================================================================
@@ -98,14 +99,27 @@ class BookSageWorker(
         try:
             # Offloading CPU-bound operations
             loop = asyncio.get_running_loop()
-            response = await loop.run_in_executor(
+            response_dict = await loop.run_in_executor(
                 self.executor,
                 self.parser.parse,
                 tmp_file_path,
                 metadata.file_type,
                 metadata.document_id,
             )
-            return response
+            
+            # Reconstruct protobuf from the pickleable dict
+            documents = [
+                booksage_pb2.RawDocument(
+                    content=doc["content"],
+                    type=doc["type"],
+                    page_number=doc["page_number"],
+                ) for doc in response_dict["documents"]
+            ]
+            return booksage_pb2.ParseResponse(
+                document_id=response_dict["document_id"],
+                extracted_metadata=response_dict["extracted_metadata"],
+                documents=documents
+            )
         except grpc.aio.AioRpcError:
             # Re-raise gRPC abortions
             raise
@@ -167,14 +181,26 @@ class BookSageWorker(
         try:
             # 【最重要】 offloading CPU/GPU-bound operations
             loop = asyncio.get_running_loop()
-            response = await loop.run_in_executor(
+            response_dict = await loop.run_in_executor(
                 self.executor,
                 self.embedder.generate,
                 list(request.texts),
                 request.embedding_type,
                 request.task_type,
             )
-            return response
+            
+            results = [
+                booksage_pb2.EmbeddingResult(
+                    text=res["text"], 
+                    dense=booksage_pb2.DenseVector(values=res["dense"])
+                )
+                for res in response_dict["results"]
+            ]
+            
+            return booksage_pb2.EmbeddingResponse(
+                results=results, 
+                total_tokens=response_dict["total_tokens"]
+            )
         except grpc.aio.AioRpcError:
             raise
         except Exception as e:
