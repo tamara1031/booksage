@@ -43,8 +43,8 @@ services:
 
   bookscout:
     build:
-      context: .
-      dockerfile: bookscout/Dockerfile
+      context: ./bookscout
+      dockerfile: Dockerfile
     environment:
       - SCOUT_PORT=${SCOUT_PORT:-8000}
       - SCOUT_LOG_LEVEL=${SCOUT_LOG_LEVEL:-info}
