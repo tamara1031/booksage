@@ -118,11 +118,13 @@ class BookSageWorker(
                     page_number=doc["page_number"],
                 ) for doc in response_dict["documents"]
             ]
-            return booksage_pb2.ParseResponse(
+            response = booksage_pb2.ParseResponse(
                 document_id=response_dict["document_id"],
                 extracted_metadata=response_dict["extracted_metadata"],
                 documents=documents
             )
+            logging.info(f"Successfully finished parsing for document {response.document_id}")
+            return response
         except grpc.aio.AioRpcError:
             # Re-raise gRPC abortions
             raise

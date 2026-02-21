@@ -107,7 +107,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing 'file' parameter", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Retrieve metadata
 	metadataStr := r.FormValue("metadata")
