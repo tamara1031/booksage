@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/booksage/booksage-api/internal/agent"
 	"github.com/booksage/booksage-api/internal/embedding"
@@ -116,13 +115,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	// Determine document_id (mock logic: same as returned in JSON)
 	docID := "doc-" + header.Filename
 
-	// Check if already exists (using same mock logic as handleDocumentExist)
-	// For mock purposes, assume IDs starting with "doc-new-" don't exist yet.
-	if !strings.HasPrefix(docID, "doc-new-") && docID != "doc-not-found" {
-		log.Printf("[Server] Conflict: Document %s already exists", docID)
-		http.Error(w, "Document already exists", http.StatusConflict)
-		return
-	}
+	// Removed mock conflict check so bookscout can upload all books
 
 	// In a complete implementation, we would stream this `file` to `s.parserClient.Parse`
 	// via gRPC and return a generated document_id in the 202 Accepted response.
@@ -168,9 +161,9 @@ func (s *Server) handleDocumentExist(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Mocking registration check:
-	// For demonstration, assume any ID that starts with "new-" doesn't exist.
+	// Always return false (not found) for now so that bookscout can ingest all books.
 	// In real life, we check Neo4j or Qdrant.
-	exists := !strings.HasPrefix(docID, "new-") && !strings.HasPrefix(docID, "doc-new-") && docID != "not-found"
+	exists := false
 
 	if !exists {
 		w.WriteHeader(http.StatusNotFound)

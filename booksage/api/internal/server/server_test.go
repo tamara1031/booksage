@@ -132,8 +132,8 @@ func TestHandleIngest_Conflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("req failed: %v", err)
 	}
-	if resp.StatusCode != http.StatusConflict {
-		t.Errorf("expected 409 Conflict, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Errorf("expected 202 Accepted, got %d", resp.StatusCode)
 	}
 }
 
