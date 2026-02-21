@@ -92,7 +92,7 @@ func Run(ctx context.Context, cfg *config.Config, source ports.BookDataSource) e
 				log.Printf("Error ingesting book %s to API: %v", b.ID, err)
 				return
 			}
-			log.Printf("Successfully ingested: %s", b.Title)
+			log.Printf("Successfully queued for ingestion: %s", b.Title)
 		}(book)
 	}
 
