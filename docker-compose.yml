@@ -46,7 +46,6 @@ services:
       context: ./bookscout
       dockerfile: Dockerfile
     environment:
-      - SCOUT_PORT=${SCOUT_PORT:-8000}
       - SCOUT_LOG_LEVEL=${SCOUT_LOG_LEVEL:-info}
       - SCOUT_BOOK_SOURCE_TYPE=${SCOUT_BOOK_SOURCE_TYPE:-opds}
       - SCOUT_OPDS_BASE_URL=${SCOUT_OPDS_BASE_URL}
@@ -60,7 +59,6 @@ services:
     depends_on:
       api:
         condition: service_started
-    restart: unless-stopped
     deploy:
       resources:
         limits:

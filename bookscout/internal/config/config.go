@@ -10,7 +10,6 @@ import (
 )
 
 type Config struct {
-	APIPort  int    `env:"SCOUT_PORT" envDefault:"8000"`
 	LogLevel string `env:"SCOUT_LOG_LEVEL" envDefault:"info"`
 
 	BookSourceType string `env:"SCOUT_BOOK_SOURCE_TYPE" envDefault:"opds"`
@@ -30,10 +29,6 @@ type Config struct {
 func (c *Config) Validate() error {
 	if c.BookSourceType == "opds" && c.OPDSBaseURL == "" {
 		return fmt.Errorf("SCOUT_OPDS_BASE_URL is required when SCOUT_BOOK_SOURCE_TYPE is opds")
-	}
-
-	if c.APIPort <= 0 || c.APIPort > 65535 {
-		return fmt.Errorf("SCOUT_PORT must be between 1 and 65535")
 	}
 
 	if c.WorkerConcurrency < 1 {
