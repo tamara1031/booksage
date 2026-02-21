@@ -7,7 +7,7 @@ WORKDIR /app
 RUN pip install uv
 
 # Copy uv project files
-COPY worker/pyproject.toml worker/uv.lock worker/README.md ./worker/
+COPY worker/pyproject.toml worker/uv.lock ./worker/
 
 WORKDIR /app/worker
 # Install dependencies into a new isolated environment (.venv)
