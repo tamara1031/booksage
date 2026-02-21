@@ -1,6 +1,6 @@
 from booksage.chunking import ChonkersChunker, FreeChunker
 from booksage.domain import DocumentMetadata
-from booksage.etl.models import RawDocument, ExtractedElement
+from booksage.etl.models import ExtractedElement, RawDocument
 
 
 def test_free_chunker():
@@ -8,7 +8,11 @@ def test_free_chunker():
     meta = DocumentMetadata(book_id="1", title="Test Book")
     doc = RawDocument(
         document_id="123",
-        elements=[ExtractedElement(content="This is a test document content for chunking.", type="text", page_number=1)],
+        elements=[
+            ExtractedElement(
+                content="This is a test document content for chunking.", type="text", page_number=1
+            )
+        ],
         domain_metadata=meta,
     )
     chunks = chunker.create_chunks(doc)
@@ -21,7 +25,11 @@ def test_chonkers_chunker():
     meta = DocumentMetadata(book_id="2", title="Test Docling")
     doc = RawDocument(
         document_id="456",
-        elements=[ExtractedElement(content="This is another test document content.", type="text", page_number=1)],
+        elements=[
+            ExtractedElement(
+                content="This is another test document content.", type="text", page_number=1
+            )
+        ],
         domain_metadata=meta,
     )
     chunks = chunker.create_chunks(doc)

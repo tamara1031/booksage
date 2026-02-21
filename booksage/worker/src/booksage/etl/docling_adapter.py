@@ -31,7 +31,8 @@ class DoclingParser(IDocumentParser):
             logger.warning(f"Docling not installed, using mock text extraction for {file_path}")
             elements.append(
                 ExtractedElement(
-                    content=f"Mock text extracted from {file_path} using Docling fallback. [Table] [Equation]",
+                    content=f"Mock text extracted from {file_path} using Docling fallback. "
+                    f"[Table] [Equation]",
                     type="text",
                     page_number=1,
                 )

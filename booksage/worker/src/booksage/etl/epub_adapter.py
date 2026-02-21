@@ -43,7 +43,8 @@ class EpubParser(IDocumentParser):
             )
             elements.append(
                 ExtractedElement(
-                    content=f"Mock text extracted from EPUB {file_path}. Chapter 1: The Beginning...",
+                    content=f"Mock text extracted from EPUB {file_path}. "
+                    "Chapter 1: The Beginning...",
                     type="text",
                     page_number=1,
                 )
