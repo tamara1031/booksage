@@ -92,7 +92,7 @@ class BookSageWorker(booksage_pb2_grpc.DocumentParserServiceServicer):
         self,
         request_iterator: AsyncIterable[booksage_pb2.ParseRequest],
         context: grpc.aio.ServicerContext,
-    ) -> booksage_pb2.ParseResponse:
+    ) -> AsyncIterable[booksage_pb2.ParseResponse]:
         logging.info("Received streaming Parse request")
 
         metadata, file_chunks = await self._collect_parse_stream(request_iterator, context)
@@ -121,22 +121,35 @@ class BookSageWorker(booksage_pb2_grpc.DocumentParserServiceServicer):
                 metadata.document_id,
             )
 
-            # Reconstruct protobuf from the pickleable dict
-            documents = [
-                booksage_pb2.RawDocument(
-                    content=doc["content"],
-                    type=doc["type"],
-                    page_number=doc["page_number"],
+            all_docs = response_dict["documents"]
+            chunk_size = 50  # Number of documents (pages/paragraphs) per gRPC message
+
+            total_docs = len(all_docs)
+            logging.info(f"Parsing complete. Yielding {total_docs} chunks in batches of {chunk_size}")
+
+            for i in range(0, total_docs, chunk_size):
+                chunk_docs = all_docs[i : i + chunk_size]
+
+                documents_pb = [
+                    booksage_pb2.RawDocument(
+                        content=doc["content"],
+                        type=doc["type"],
+                        page_number=doc["page_number"],
+                    )
+                    for doc in chunk_docs
+                ]
+
+                # Only include metadata in the first message to save bandwidth
+                extracted_meta = response_dict["extracted_metadata"] if i == 0 else {}
+
+                yield booksage_pb2.ParseResponse(
+                    document_id=response_dict["document_id"],
+                    extracted_metadata=extracted_meta,
+                    documents=documents_pb,
                 )
-                for doc in response_dict["documents"]
-            ]
-            response = booksage_pb2.ParseResponse(
-                document_id=response_dict["document_id"],
-                extracted_metadata=response_dict["extracted_metadata"],
-                documents=documents,
-            )
-            logging.info(f"Successfully finished parsing for document {response.document_id}")
-            return response
+
+            logging.info(f"Successfully finished streaming parsing for document {metadata.document_id}")
+
         except grpc.aio.AioRpcError:
             # Re-raise gRPC abortions
             raise

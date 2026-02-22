@@ -212,12 +212,46 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Receive response from worker
-	resp, err := stream.CloseAndRecv()
-	if err != nil {
-		log.Printf("[Server] Worker returned error: %v", err)
+	// 3. Receive response from worker (Stream)
+	if err := stream.CloseSend(); err != nil {
+		log.Printf("[Server] Failed to close send stream: %v", err)
 		http.Error(w, "Worker processing failed", http.StatusInternalServerError)
 		return
+	}
+
+	var allDocs []*pb.RawDocument
+	var docID string
+	var extractedMetadata map[string]string
+
+	for {
+		chunk, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Printf("[Server] Worker returned error: %v", err)
+			http.Error(w, "Worker processing failed", http.StatusInternalServerError)
+			return
+		}
+
+		if chunk.DocumentId != "" {
+			docID = chunk.DocumentId
+		}
+		if len(chunk.ExtractedMetadata) > 0 {
+			if extractedMetadata == nil {
+				extractedMetadata = make(map[string]string)
+			}
+			for k, v := range chunk.ExtractedMetadata {
+				extractedMetadata[k] = v
+			}
+		}
+		allDocs = append(allDocs, chunk.Documents...)
+	}
+
+	resp := &pb.ParseResponse{
+		DocumentId:        docID,
+		ExtractedMetadata: extractedMetadata,
+		Documents:         allDocs,
 	}
 
 	log.Printf("[Server] Successfully parsed document %s. Received %d elements.", resp.DocumentId, len(resp.Documents))
