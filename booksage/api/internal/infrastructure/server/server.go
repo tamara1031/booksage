@@ -108,7 +108,11 @@ func (s *Server) Run() error {
 	if err != nil {
 		return err
 	}
-	defer s.dbConn.Close()
+	defer func() {
+		if closeErr := s.dbConn.Close(); closeErr != nil {
+			log.Printf("[Warning] Failed to close database: %v", closeErr)
+		}
+	}()
 
 	bunStore, err := bunstore.NewBunStore(s.dbConn, sqlitedialect.New())
 	if err != nil {
