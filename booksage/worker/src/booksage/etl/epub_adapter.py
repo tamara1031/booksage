@@ -15,6 +15,7 @@ class EpubParser(IDocumentParser):
         Handles missing library gracefully for testing purposes.
         """
         from booksage.etl.models import ExtractedElement
+
         elements = []
         extra_meta = {"status": "success", "parser": "epublib"}
         doc_id = str(uuid.uuid4())

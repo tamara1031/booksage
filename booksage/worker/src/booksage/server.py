@@ -34,6 +34,7 @@ class DocumentParser:
         Routes the file to the appropriate ETL parser based on file extension.
         """
         import os
+
         _, ext = os.path.splitext(file_path)
         ext = ext.lower()
 
@@ -83,6 +84,7 @@ class EmbeddingGenerator:
     def _get_model(self):
         if self._model is None:
             from sentence_transformers import SentenceTransformer
+
             self._model = SentenceTransformer(self.model_name)
         return self._model
 
@@ -100,7 +102,7 @@ class EmbeddingGenerator:
 
         # Calculate embeddings
         embeddings = model.encode(texts, convert_to_numpy=True)
-        
+
         # Optional: handling sparse vs dense if embedding_type is different, but for now we do dense
         results = [
             {"text": text, "dense": vector.tolist()}
@@ -109,7 +111,7 @@ class EmbeddingGenerator:
 
         # Approximate token count (simplified)
         total_tokens = sum(len(text.split()) for text in texts) * 2
-        
+
         return {"results": results, "total_tokens": total_tokens}
 
 

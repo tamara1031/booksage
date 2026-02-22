@@ -15,6 +15,7 @@ class DoclingParser(IDocumentParser):
         Handles missing library gracefully for testing purposes.
         """
         from booksage.etl.models import ExtractedElement
+
         elements = []
         extra_meta = {"status": "success", "parser": "docling"}
         doc_id = str(uuid.uuid4())

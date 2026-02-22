@@ -15,6 +15,7 @@ class PyMuPDFParser(IDocumentParser):
         Handles missing library gracefully for testing purposes.
         """
         from booksage.etl.models import ExtractedElement
+
         elements = []
         extra_meta = {"status": "success", "parser": "pymupdf"}
         doc_id = str(uuid.uuid4())
@@ -24,7 +25,7 @@ class PyMuPDFParser(IDocumentParser):
 
             doc = fitz.open(file_path)
             extra_meta["page_count"] = doc.page_count
-            
+
             for i, page in enumerate(doc):
                 text = page.get_text()
                 if text.strip():
