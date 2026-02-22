@@ -229,23 +229,30 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Prepare Qdrant Chunks
+		// Prepare Qdrant Chunks (with metadata from parse response)
 		var chunks []any
 		for i, res := range embResults {
-			chunks = append(chunks, map[string]any{
+			chunk := map[string]any{
 				"id":     fmt.Sprintf("%s-chunk-%d", parsedResp.DocumentId, i),
 				"text":   res.Text,
 				"vector": res.GetDense().GetValues(),
-			})
+			}
+			// Propagate structural metadata from ParseResponse
+			if i < len(parsedResp.Documents) {
+				chunk["page_number"] = int(parsedResp.Documents[i].PageNumber)
+				chunk["type"] = parsedResp.Documents[i].Type
+			}
+			chunks = append(chunks, chunk)
 		}
 
-		// Prepare Neo4j Nodes
+		// Prepare Neo4j Nodes (with enriched metadata)
 		var graphNodes []any
 		for i, doc := range parsedResp.Documents {
 			graphNodes = append(graphNodes, map[string]any{
-				"id":   fmt.Sprintf("%s-node-%d", parsedResp.DocumentId, i),
-				"text": doc.Content,
-				"type": "Chunk",
+				"id":          fmt.Sprintf("%s-node-%d", parsedResp.DocumentId, i),
+				"text":        doc.Content,
+				"type":        doc.Type,
+				"page_number": int(doc.PageNumber),
 			})
 		}
 

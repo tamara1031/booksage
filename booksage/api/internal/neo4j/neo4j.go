@@ -32,14 +32,25 @@ func NewClient(ctx context.Context, uri, user, password string) (*Client, error)
 	return &Client{driver: driver}, nil
 }
 
-// InsertNodesAndEdges creates Chunk nodes in Neo4j for the given document.
-// Each node is expected to be a map[string]any with "id", "text", and "type" keys.
+// InsertNodesAndEdges creates a Document root node and Chunk child nodes in Neo4j.
+// Each node is expected to be a map[string]any with "id", "text", "type", and "page_number" keys.
 func (c *Client) InsertNodesAndEdges(ctx context.Context, docID string, nodes []any) error {
 	if len(nodes) == 0 {
 		return nil
 	}
 
-	// Convert nodes to a format suitable for Cypher UNWIND
+	// Step 1: Ensure Document root node exists
+	docQuery := `MERGE (d:Document {doc_id: $doc_id})`
+	_, err := neo4j.ExecuteQuery(ctx, c.driver, docQuery,
+		map[string]any{"doc_id": docID},
+		neo4j.EagerResultTransformer,
+		neo4j.ExecuteQueryWithDatabase(""),
+	)
+	if err != nil {
+		return fmt.Errorf("neo4j document node creation failed for doc %s: %w", docID, err)
+	}
+
+	// Step 2: Create Chunk nodes with HAS_CHUNK edges to Document
 	var nodeParams []map[string]any
 	for i, node := range nodes {
 		m, ok := node.(map[string]any)
@@ -58,38 +69,59 @@ func (c *Client) InsertNodesAndEdges(ctx context.Context, docID string, nodes []
 			nodeType = "Chunk"
 		}
 
+		pageNumber := 0
+		switch pn := m["page_number"].(type) {
+		case int:
+			pageNumber = pn
+		case int32:
+			pageNumber = int(pn)
+		case int64:
+			pageNumber = int(pn)
+		case float64:
+			pageNumber = int(pn)
+		}
+
 		nodeParams = append(nodeParams, map[string]any{
-			"node_id":   nodeID,
-			"doc_id":    docID,
-			"text":      text,
-			"node_type": nodeType,
+			"node_id":     nodeID,
+			"doc_id":      docID,
+			"text":        text,
+			"node_type":   nodeType,
+			"page_number": pageNumber,
 		})
 	}
 
-	query := `
+	chunkQuery := `
 		UNWIND $nodes AS n
 		MERGE (c:Chunk {node_id: n.node_id})
 		SET c.doc_id = n.doc_id,
 		    c.text = n.text,
-		    c.node_type = n.node_type
+		    c.node_type = n.node_type,
+		    c.page_number = n.page_number
+		WITH c, n
+		MATCH (d:Document {doc_id: n.doc_id})
+		MERGE (d)-[:HAS_CHUNK]->(c)
 	`
 
-	_, err := neo4j.ExecuteQuery(ctx, c.driver, query,
+	_, err = neo4j.ExecuteQuery(ctx, c.driver, chunkQuery,
 		map[string]any{"nodes": nodeParams},
 		neo4j.EagerResultTransformer,
 		neo4j.ExecuteQueryWithDatabase(""),
 	)
 	if err != nil {
-		return fmt.Errorf("neo4j insert failed for doc %s: %w", docID, err)
+		return fmt.Errorf("neo4j chunk insertion failed for doc %s: %w", docID, err)
 	}
 
-	log.Printf("[Neo4j] Inserted %d nodes for doc %s", len(nodeParams), docID)
+	log.Printf("[Neo4j] Inserted Document + %d Chunk nodes for doc %s", len(nodeParams), docID)
 	return nil
 }
 
 // DeleteDocumentNodes deletes all nodes belonging to a document.
 func (c *Client) DeleteDocumentNodes(ctx context.Context, docID string) error {
-	query := `MATCH (c:Chunk {doc_id: $doc_id}) DETACH DELETE c`
+	query := `
+		MATCH (d:Document {doc_id: $doc_id})
+		OPTIONAL MATCH (d)-[:HAS_CHUNK]->(c:Chunk)
+		DETACH DELETE c, d
+	`
 
 	_, err := neo4j.ExecuteQuery(ctx, c.driver, query,
 		map[string]any{"doc_id": docID},
@@ -100,13 +132,13 @@ func (c *Client) DeleteDocumentNodes(ctx context.Context, docID string) error {
 		return fmt.Errorf("neo4j delete failed for doc %s: %w", docID, err)
 	}
 
-	log.Printf("[Neo4j] Deleted nodes for doc %s", docID)
+	log.Printf("[Neo4j] Deleted Document + Chunk nodes for doc %s", docID)
 	return nil
 }
 
 // DocumentExists checks if any Chunk nodes exist for the given document ID.
 func (c *Client) DocumentExists(ctx context.Context, docID string) (bool, error) {
-	query := `MATCH (c:Chunk {doc_id: $doc_id}) RETURN count(c) AS cnt LIMIT 1`
+	query := `MATCH (d:Document {doc_id: $doc_id}) RETURN count(d) AS cnt LIMIT 1`
 
 	result, err := neo4j.ExecuteQuery(ctx, c.driver, query,
 		map[string]any{"doc_id": docID},

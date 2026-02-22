@@ -2,6 +2,8 @@ package qdrant
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"log"
 
@@ -49,7 +51,6 @@ func (c *Client) ensureCollection(ctx context.Context) error {
 	}
 
 	// Create collection with a reasonable default vector size.
-	// The actual embedding dimension depends on the model used by the worker.
 	// 768 is a common dimension for many embedding models (e.g. all-MiniLM-L6-v2).
 	err = c.client.CreateCollection(ctx, &pb.CreateCollection{
 		CollectionName: c.collection,
@@ -62,12 +63,28 @@ func (c *Client) ensureCollection(ctx context.Context) error {
 		return err
 	}
 
-	log.Printf("[Qdrant] Created collection %q", c.collection)
+	// Create payload index on doc_id for efficient filtering
+	if indexErr := c.createPayloadIndex(ctx); indexErr != nil {
+		log.Printf("[Qdrant] Warning: failed to create payload index: %v", indexErr)
+	}
+
+	log.Printf("[Qdrant] Created collection %q with payload index", c.collection)
 	return nil
 }
 
+// createPayloadIndex creates keyword indexes on frequently filtered payload fields.
+func (c *Client) createPayloadIndex(ctx context.Context) error {
+	_, err := c.client.CreateFieldIndex(ctx, &pb.CreateFieldIndexCollection{
+		CollectionName: c.collection,
+		FieldName:      "doc_id",
+		FieldType:      pb.PtrOf(pb.FieldType_FieldTypeKeyword),
+	})
+	return err
+}
+
 // InsertChunks upserts embedding chunks into the Qdrant collection.
-// Each chunk is expected to be a map[string]any with "id", "text", and "vector" keys.
+// Each chunk is expected to be a map[string]any with "id", "text", "vector",
+// and optionally "page_number" and "type" keys.
 func (c *Client) InsertChunks(ctx context.Context, docID string, chunks []any) error {
 	if len(chunks) == 0 {
 		return nil
@@ -97,13 +114,25 @@ func (c *Client) InsertChunks(ctx context.Context, docID string, chunks []any) e
 			return fmt.Errorf("chunk %d: %w", i, err)
 		}
 
+		// Build payload
+		payload := map[string]any{
+			"doc_id": docID,
+			"text":   text,
+		}
+		if pageNum, ok := m["page_number"]; ok {
+			payload["page_number"] = pageNum
+		}
+		if chunkType, ok := m["type"]; ok {
+			payload["type"] = chunkType
+		}
+
+		// Generate a deterministic numeric ID from the chunk string ID
+		pointID := deterministicID(chunkID)
+
 		points = append(points, &pb.PointStruct{
-			Id:      pb.NewIDUUID(chunkID),
+			Id:      pb.NewIDNum(pointID),
 			Vectors: pb.NewVectors(vector...),
-			Payload: pb.NewValueMap(map[string]any{
-				"doc_id": docID,
-				"text":   text,
-			}),
+			Payload: pb.NewValueMap(payload),
 		})
 	}
 
@@ -162,6 +191,12 @@ func (c *Client) DocumentExists(ctx context.Context, docID string) (bool, error)
 // Close closes the underlying Qdrant gRPC connection.
 func (c *Client) Close() error {
 	return c.client.Close()
+}
+
+// deterministicID generates a deterministic uint64 from a string key using SHA256.
+func deterministicID(key string) uint64 {
+	h := sha256.Sum256([]byte(key))
+	return binary.BigEndian.Uint64(h[:8])
 }
 
 // toFloat32Slice converts various numeric slice types to []float32.

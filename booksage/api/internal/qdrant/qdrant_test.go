@@ -75,3 +75,23 @@ func TestToFloat32Slice_Empty(t *testing.T) {
 		t.Errorf("expected empty slice, got %v", result)
 	}
 }
+
+func TestDeterministicID(t *testing.T) {
+	// Same input should produce same output
+	id1 := deterministicID("doc-1-chunk-0")
+	id2 := deterministicID("doc-1-chunk-0")
+	if id1 != id2 {
+		t.Errorf("expected deterministic: %d != %d", id1, id2)
+	}
+
+	// Different input should produce different output
+	id3 := deterministicID("doc-1-chunk-1")
+	if id1 == id3 {
+		t.Error("expected different IDs for different inputs")
+	}
+
+	// Should produce non-zero value
+	if id1 == 0 {
+		t.Error("expected non-zero ID")
+	}
+}
