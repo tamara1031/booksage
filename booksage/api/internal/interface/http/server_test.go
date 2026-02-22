@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -179,14 +180,26 @@ func (m *mockParserClient) Parse(ctx context.Context, opts ...grpc.CallOption) (
 
 type mockParseClientStream struct {
 	grpc.ClientStream
+	sentCount int
 }
 
 func (m *mockParseClientStream) Send(req *pb.ParseRequest) error {
 	return nil
 }
 
-func (m *mockParseClientStream) CloseAndRecv() (*pb.ParseResponse, error) {
-	return &pb.ParseResponse{DocumentId: "mock-doc-id"}, nil
+func (m *mockParseClientStream) Recv() (*pb.ParseResponse, error) {
+	if m.sentCount > 0 {
+		return nil, io.EOF
+	}
+	m.sentCount++
+	return &pb.ParseResponse{
+		DocumentId: "mock-doc-id",
+		Documents:  []*pb.RawDocument{{Content: "Mock Content"}},
+	}, nil
+}
+
+func (m *mockParseClientStream) CloseSend() error {
+	return nil
 }
 
 type mockEmbeddingClient struct{}

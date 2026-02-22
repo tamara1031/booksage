@@ -114,7 +114,7 @@ tidy: tidy-api tidy-worker
 .PHONY: proto-go
 proto-go:
 	@mkdir -p $(GO_PROTO_OUT)
-	@protoc -Iproto --go_out=$(GO_PROTO_OUT) --go_opt=paths=source_relative --go-grpc_out=$(GO_PROTO_OUT) --go-grpc_opt=paths=source_relative $(PROTO_DIR)/*.proto
+	@uv run --project worker python -m grpc_tools.protoc -Iproto --plugin=protoc-gen-go=$(shell go env GOPATH)/bin/protoc-gen-go --plugin=protoc-gen-go-grpc=$(shell go env GOPATH)/bin/protoc-gen-go-grpc --go_out=$(GO_PROTO_OUT) --go_opt=paths=source_relative --go-grpc_out=$(GO_PROTO_OUT) --go-grpc_opt=paths=source_relative $(PROTO_DIR)/*.proto
 
 .PHONY: proto-python
 proto-python:

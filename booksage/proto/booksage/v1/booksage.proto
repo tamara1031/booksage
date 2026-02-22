@@ -10,7 +10,8 @@ service DocumentParserService {
   // Parse accepts a stream of binary chunks from a document, and returns
   // the extracted metadata and markdown text chunks asynchronously.
   // Using client streaming to avoid hitting gRPC maximum message size (4MB limit).
-  rpc Parse(stream ParseRequest) returns (ParseResponse);
+  // Using server streaming to handle large parsed outputs incrementally.
+  rpc Parse(stream ParseRequest) returns (stream ParseResponse);
 }
 
 // Request stream structure

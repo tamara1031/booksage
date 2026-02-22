@@ -36,7 +36,7 @@ class DocumentParserServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.Parse = channel.stream_unary(
+        self.Parse = channel.stream_stream(
                 '/booksage.v1.DocumentParserService/Parse',
                 request_serializer=booksage_dot_v1_dot_booksage__pb2.ParseRequest.SerializeToString,
                 response_deserializer=booksage_dot_v1_dot_booksage__pb2.ParseResponse.FromString,
@@ -52,6 +52,7 @@ class DocumentParserServiceServicer(object):
         """Parse accepts a stream of binary chunks from a document, and returns
         the extracted metadata and markdown text chunks asynchronously.
         Using client streaming to avoid hitting gRPC maximum message size (4MB limit).
+        Using server streaming to handle large parsed outputs incrementally.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -60,7 +61,7 @@ class DocumentParserServiceServicer(object):
 
 def add_DocumentParserServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'Parse': grpc.stream_unary_rpc_method_handler(
+            'Parse': grpc.stream_stream_rpc_method_handler(
                     servicer.Parse,
                     request_deserializer=booksage_dot_v1_dot_booksage__pb2.ParseRequest.FromString,
                     response_serializer=booksage_dot_v1_dot_booksage__pb2.ParseResponse.SerializeToString,
@@ -89,7 +90,7 @@ class DocumentParserService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.stream_unary(
+        return grpc.experimental.stream_stream(
             request_iterator,
             target,
             '/booksage.v1.DocumentParserService/Parse',

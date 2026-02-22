@@ -55,8 +55,8 @@ func TestBatcher_GenerateEmbeddingsBatched(t *testing.T) {
 	if len(res) != 5 {
 		t.Fatalf("Expected 5 results, got %d", len(res))
 	}
-	if tokens != 10 { // 5 texts * 2 tokens/text
-		t.Errorf("Expected 10 total tokens, got %d", tokens)
+	if tokens != 50 { // 5 texts * 10 tokens/text (mock implementation)
+		t.Errorf("Expected 50 total tokens, got %d", tokens)
 	}
 
 	// Verify order is preserved
