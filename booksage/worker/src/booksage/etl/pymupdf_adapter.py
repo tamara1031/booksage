@@ -13,6 +13,7 @@ class PyMuPDFParser(IDocumentParser):
     def parse_file(self, file_path: str, metadata: DocumentMetadata) -> RawDocument:
         """Parse file using PyMuPDF (fitz) and return a RawDocument containing extracted text."""
         import fitz
+
         from booksage.etl.models import ExtractedElement
 
         elements = []

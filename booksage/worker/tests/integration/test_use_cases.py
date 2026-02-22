@@ -1,9 +1,5 @@
 # Chunking
 from booksage.chunking import ChonkersChunker, FreeChunker
-from booksage.domain import DocumentMetadata, QueryContext
-
-# ETL
-from booksage.etl.models import RawDocument
 
 # Generation
 from booksage.generation import AgenticGenerator
@@ -13,6 +9,11 @@ from booksage.infrastructure import MilvusVectorStore
 
 # Retrieval
 from booksage.retrieval import ColBERTV2Engine, FusionRetriever, LightRAGEngine, RAPTOREngine
+
+from booksage.domain import DocumentMetadata, QueryContext
+
+# ETL
+from booksage.etl.models import RawDocument
 
 
 def test_use_case_1_standard_book_ingestion():

@@ -125,7 +125,9 @@ class BookSageWorker(booksage_pb2_grpc.DocumentParserServiceServicer):
             chunk_size = 50  # Number of documents (pages/paragraphs) per gRPC message
 
             total_docs = len(all_docs)
-            logging.info(f"Parsing complete. Yielding {total_docs} chunks in batches of {chunk_size}")
+            logging.info(
+                f"Parsing complete. Yielding {total_docs} chunks in batches of {chunk_size}"
+            )
 
             for i in range(0, total_docs, chunk_size):
                 chunk_docs = all_docs[i : i + chunk_size]
@@ -148,7 +150,9 @@ class BookSageWorker(booksage_pb2_grpc.DocumentParserServiceServicer):
                     documents=documents_pb,
                 )
 
-            logging.info(f"Successfully finished streaming parsing for document {metadata.document_id}")
+            logging.info(
+                f"Successfully finished streaming parsing for document {metadata.document_id}"
+            )
 
         except grpc.aio.AioRpcError:
             # Re-raise gRPC abortions
