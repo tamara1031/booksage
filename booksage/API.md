@@ -42,8 +42,16 @@ Streams Server-Sent Events (SSE) detailing the reasoning trace, sources, and fin
 **Event Format (JSON payloads per event):**
 ```json
 {
-  "type": "reasoning", // or "answer", "source", "error"
-  "content": "[Agent] Extracting simple keywords using Local Model..."
+  "type": "reasoning", // "Analyzing complexity", "Decomposed", "Filtering irrelevant"
+  "content": "Analyzing query complexity..."
+}
+{
+  "type": "source",    // Retrieval source metadata
+  "content": "[RAPTOR] (score: 0.95) Chapter 1 Summary..."
+}
+{
+  "type": "answer",    // Final generated content
+  "content": "The history of quantum..."
 }
 ```
 
@@ -57,8 +65,23 @@ Streams Server-Sent Events (SSE) detailing the reasoning trace, sources, and fin
 **Response (202 Accepted):**
 ```json
 {
-  "document_id": "doc-uuid-string",
-  "status": "processing"
+  "saga_id": 42,
+  "status": "processing",
+  "hash": "sha256-hex-string"
+}
+```
+
+### 1.3 `GET /api/v1/ingest/status?hash={sha256}`
+**Description:** Checks the ingestion status of a previously uploaded document using its SHA-256 hash.
+
+**Response (200 OK):**
+```json
+{
+  "saga_id": 42,
+  "document_id": "doc-uuid",
+  "status": "completed", // pending, processing, completed, failed
+  "current_step": "vector_indexing",
+  "updated_at": 1708600000
 }
 ```
 

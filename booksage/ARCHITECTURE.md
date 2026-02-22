@@ -10,8 +10,11 @@ BookSage is the core engine of the system, split into a Go API Orchestrator and 
 **Role:** The high-performance gateway and cognitive conductor.
 - **REST API Server**: Serves public HTTP endpoints (e.g., `/api/v1/query`, `/api/v1/ingest`). Includes middleware stack (Request ID, Logging, Recovery).
 - **Agentic Loop (CoR & Self-RAG)**: Orchestrates reasoning. It decomposes user queries into sub-queries and critiques retrieved data for hallucinations.
-- **Fusion Retrieval Orchestrator**: Uses lightweight `goroutines` to query multiple databases (Neo4j, Qdrant) concurrently. Intent-driven dynamic fusion with weighted RRF.
-- **LLM Router**: Intelligently dispatches tasks. Heavy reasoning goes to Cloud LLMs (Gemini), while lightweight tasks are sent to the local Ollama model.
+- **Fusion Retrieval Orchestrator**: Uses lightweight `goroutines` to query multiple databases (Neo4j, Qdrant) concurrently. Implements **Skyline Ranker** (Pareto-optimal) for multi-objective fusion.
+- **LLM Router (Weight-based)**: Intelligently dispatches tasks based on cognitive load (ADR-006). 
+    - **Heavy Reasoning**: Routed to Cloud APIs (Gemini) or powerful local models.
+    - **Lightweight Tasks**: Routed to local LLMs (e.g., `llama3`) for intent classification and keyword extraction.
+    - **Dedicated Embeddings**: Routed to specialized local embedding models (e.g., `nomic-embed-text`) to ensure vector quality.
 - **Production Middleware**: Request ID propagation, structured access logging, panic recovery, and Circuit Breaker (Closed/Open/HalfOpen) for external service calls.
 - **Health Probes**: `/healthz` (liveness) and `/readyz` (readiness) endpoints for Kubernetes.
 - **Graceful Shutdown**: SIGTERM/SIGINT signal handling with connection draining.
@@ -36,13 +39,19 @@ The Go Orchestrator executes three engines asynchronously in parallel:
 2. **RAPTOR (Qdrant Tree)**: Excels at macro summarization across chapters.
 3. **ColBERTv2 (Qdrant Tensor)**: Excels at exact, microscopic token matching.
 
-The results are dynamically prioritized using **intent-driven dynamic fusion (Operator pattern)**.
+The results are dynamically prioritized using **Skyline Ranker (Pareto-optimal fusion)** based on relevance scores and graph centrality (ADR-006).
 
 ### C. Agentic Generation (Generation Phase)
 Wraps generation in an autonomous evaluation loop (Self-RAG):
-1. **Chain-of-Retrieval (CoR)**: Decomposes complex questions.
-2. **Retrieval Critique**: Validates context relevance.
-3. **Generation Critique**: Verifies factual support in the text.
+1. **Chain-of-Retrieval (CoR)**: Decomposes complex questions into atomic sub-questions.
+2. **Retrieval Evaluation**: Validates context relevance to filter out noise.
+3. **Generation Critique**: Verifies factual support levels (Fully/Partially/No Support).
+4. **Autonomous Regeneration**: Triggers re-generation if context support is insufficient.
+
+### D. Local Model Specialization (Ollama)
+To ensure high performance while running locally, the system decouples heavy reasoning from specialized embedding tasks:
+- **Reasoning/Logic**: `llama3` is the default for intent detection and keyword extraction.
+- **Embeddings**: `nomic-embed-text` is recommended for high-dimensional vector accuracy (ADR-007).
 
 ---
 

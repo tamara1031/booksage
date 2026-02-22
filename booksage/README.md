@@ -11,17 +11,31 @@ The high-performance gateway and orchestration engine for the BookSage RAG syste
 ### Key Responsibilities
 
 - **API Gateway**: Provides the primary interface (REST/SSE) for user interactions, with middleware stack (Request ID, Structured Logging, Panic Recovery).
-- **Agentic Loop (CoR & Self-RAG)**: Orchestrates the reasoning chain — decomposes queries into sub-queries (CoR), critiques retrieval relevance, and validates factual grounding.
-- **Fusion Retrieval**: Executes parallel queries across Neo4j (Graph) and Qdrant (Vector) with **intent-driven dynamic fusion** and weighted Reciprocal Rank Fusion (RRF).
-- **LLM Router**: Intelligently dispatches tasks between local models (Ollama) and Cloud APIs (Gemini).
-- **Resilience**: Circuit Breaker pattern, graceful shutdown (SIGTERM/SIGINT), health (`/healthz`) and readiness (`/readyz`) probes.
+- **SOTA Agentic Loop (CoR & Self-RAG)**: Orchestrates reasoning via Chain-of-Retrieval (CoR), critiques retrieval relevance, and validates factual grounding via Support Level evaluation.
+- **Advanced Fusion Retrieval**: Executes parallel queries across Neo4j (Graph) and Qdrant (Vector) with **Skyline Ranker (Pareto-optimal)** and weighted RRF.
+- **Dual-Model LLM Router**: Intelligently dispatches tasks between local models (separate LLM and Embedding clients) and Gemini.
+- **Reliable Ingestion Saga**: Implements a SagaOrchestrator for idempotent, hash-based document processing across multiple databases.
+- **Resilience**: Circuit Breaker pattern, graceful shutdown, and health/readiness probes.
 - **gRPC Client**: Manages communication with the Python ML Worker via **gRPC Client Streaming**.
+
+### Configuration
+
+The Orchestrator is configured via environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SAGE_GEMINI_API_KEY` | Google Gemini API Key | Required (if not local-only) |
+| `SAGE_OLLAMA_HOST` | Ollama Server URL | `http://localhost:11434` |
+| `SAGE_OLLAMA_LLM_MODEL` | Local LLM for light tasks (intent/keywords) | `llama3` |
+| `SAGE_OLLAMA_EMBED_MODEL` | Dedicated model for high-quality embeddings | `nomic-embed-text` |
+| `SAGE_USE_LOCAL_ONLY_LLM` | Force local-only execution | `false` |
+| `SAGE_WORKER_ADDR` | ML Worker gRPC address | `localhost:50051` |
 
 ### Setup & Development
 
 - **Prerequisites**: Go 1.25+
 - **Installation**: Run `go mod download` from the `api/` directory.
-- **Testing**: Use `make test-api` from the monorepo root.
+- **Testing**: Use `make test-api-small` (unit) or `make test-api-medium` (SUT) from the root.
 
 ---
 
