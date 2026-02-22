@@ -14,7 +14,8 @@ type Config struct {
 	WorkerAddr       string
 	GeminiAPIKey     string
 	OllamaHost       string
-	OllamaModel      string
+	OllamaLLMModel   string
+	OllamaEmbedModel string
 	UseLocalOnlyLLM  bool
 	DefaultTimeout   time.Duration
 	EmbeddingTimeout time.Duration
@@ -48,7 +49,8 @@ func Load() *Config {
 		WorkerAddr:       getEnv("SAGE_WORKER_ADDR", "localhost:50051"),
 		GeminiAPIKey:     getEnv("SAGE_GEMINI_API_KEY", ""),
 		OllamaHost:       getEnv("SAGE_OLLAMA_HOST", "http://localhost:11434"),
-		OllamaModel:      getEnv("SAGE_OLLAMA_MODEL", "llama3"),
+		OllamaLLMModel:   getEnv("SAGE_OLLAMA_LLM_MODEL", "llama3"),
+		OllamaEmbedModel: getEnv("SAGE_OLLAMA_EMBED_MODEL", "nomic-embed-text"),
 		UseLocalOnlyLLM:  getEnvBool("SAGE_USE_LOCAL_ONLY_LLM", false),
 		DefaultTimeout:   getEnvDuration("SAGE_DEFAULT_TIMEOUT_SEC", 30) * time.Second,
 		EmbeddingTimeout: getEnvDuration("SAGE_EMBEDDING_TIMEOUT_SEC", 5) * time.Second,

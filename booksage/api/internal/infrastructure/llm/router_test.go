@@ -22,10 +22,11 @@ func (m *mockClient) Name() string {
 }
 
 func TestLLMRouter(t *testing.T) {
-	localMock := &mockClient{name: "local_ollama"}
+	localLLMMock := &mockClient{name: "local_ollama_llm"}
+	localEmbedMock := &mockClient{name: "local_ollama_embed"}
 	geminiMock := &mockClient{name: "gemini_api"}
 
-	router := llm.NewRouter(localMock, geminiMock)
+	router := llm.NewRouter(localLLMMock, localEmbedMock, geminiMock)
 
 	tests := []struct {
 		name         string
@@ -33,14 +34,14 @@ func TestLLMRouter(t *testing.T) {
 		expectedName string
 	}{
 		{
-			name:         "Embedding should route to Local",
+			name:         "Embedding should route to Local Embed",
 			taskType:     repository.TaskType("embedding"),
-			expectedName: "local_ollama",
+			expectedName: "local_ollama_embed",
 		},
 		{
-			name:         "Keyword Extraction should route to Local",
+			name:         "Keyword Extraction should route to Local LLM",
 			taskType:     repository.TaskType("simple_keyword_extraction"),
-			expectedName: "local_ollama",
+			expectedName: "local_ollama_llm",
 		},
 		{
 			name:         "Agentic Reasoning should route to Gemini",
@@ -58,9 +59,9 @@ func TestLLMRouter(t *testing.T) {
 			expectedName: "gemini_api",
 		},
 		{
-			name:         "Unknown tasks should default to Local",
+			name:         "Unknown tasks should default to Local LLM",
 			taskType:     repository.TaskType("unknown_task_123"),
-			expectedName: "local_ollama",
+			expectedName: "local_ollama_llm",
 		},
 	}
 

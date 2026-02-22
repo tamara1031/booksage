@@ -22,8 +22,11 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.OllamaHost != "http://localhost:11434" {
 		t.Errorf("expected OllamaHost to be http://localhost:11434, got %v", cfg.OllamaHost)
 	}
-	if cfg.OllamaModel != "llama3" {
-		t.Errorf("expected OllamaModel to be llama3, got %v", cfg.OllamaModel)
+	if cfg.OllamaLLMModel != "llama3" {
+		t.Errorf("expected OllamaLLMModel to be llama3, got %v", cfg.OllamaLLMModel)
+	}
+	if cfg.OllamaEmbedModel != "nomic-embed-text" {
+		t.Errorf("expected OllamaEmbedModel to be nomic-embed-text, got %v", cfg.OllamaEmbedModel)
 	}
 	if cfg.UseLocalOnlyLLM != false {
 		t.Errorf("expected UseLocalOnlyLLM to be false, got %v", cfg.UseLocalOnlyLLM)
@@ -44,7 +47,8 @@ func TestLoadWithEnvironmentVariables(t *testing.T) {
 	_ = os.Setenv("SAGE_WORKER_ADDR", "worker:50051")
 	_ = os.Setenv("SAGE_GEMINI_API_KEY", "test-key")
 	_ = os.Setenv("SAGE_OLLAMA_HOST", "http://ollama:11434")
-	_ = os.Setenv("SAGE_OLLAMA_MODEL", "llama2")
+	_ = os.Setenv("SAGE_OLLAMA_LLM_MODEL", "llama2")
+	_ = os.Setenv("SAGE_OLLAMA_EMBED_MODEL", "all-minilm")
 	_ = os.Setenv("SAGE_USE_LOCAL_ONLY_LLM", "true")
 	_ = os.Setenv("SAGE_DEFAULT_TIMEOUT_SEC", "45")
 	_ = os.Setenv("SAGE_EMBEDDING_TIMEOUT_SEC", "10")
@@ -62,8 +66,11 @@ func TestLoadWithEnvironmentVariables(t *testing.T) {
 	if cfg.OllamaHost != "http://ollama:11434" {
 		t.Errorf("expected OllamaHost to be http://ollama:11434, got %v", cfg.OllamaHost)
 	}
-	if cfg.OllamaModel != "llama2" {
-		t.Errorf("expected OllamaModel to be llama2, got %v", cfg.OllamaModel)
+	if cfg.OllamaLLMModel != "llama2" {
+		t.Errorf("expected OllamaLLMModel to be llama2, got %v", cfg.OllamaLLMModel)
+	}
+	if cfg.OllamaEmbedModel != "all-minilm" {
+		t.Errorf("expected OllamaEmbedModel to be all-minilm, got %v", cfg.OllamaEmbedModel)
 	}
 	if cfg.UseLocalOnlyLLM != true {
 		t.Errorf("expected UseLocalOnlyLLM to be true, got %v", cfg.UseLocalOnlyLLM)

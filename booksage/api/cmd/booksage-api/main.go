@@ -60,24 +60,28 @@ func main() {
 		}
 	}
 
-	// Initialize Ollama Client
-	localClient := llm.NewLocalOllamaClient(cfg.OllamaHost, cfg.OllamaModel)
+	// Initialize Ollama Clients
+	localLLMClient := llm.NewLocalOllamaClient(cfg.OllamaHost, cfg.OllamaLLMModel)
+	localEmbedClient := llm.NewLocalOllamaClient(cfg.OllamaHost, cfg.OllamaEmbedModel)
 
 	// Override Gemini with Local Client if requested
 	if cfg.UseLocalOnlyLLM {
-		log.Println("[System] 🏠 BS_USE_LOCAL_ONLY_LLM is true. Overriding Gemini with Local Ollama.")
-		geminiClient = localClient
+		log.Println("[System] 🏠 SAGE_USE_LOCAL_ONLY_LLM is true. Overriding Gemini with Local Ollama.")
+		geminiClient = localLLMClient
 	}
 
 	// Initialize the LLM Router
-	llmRouter := llm.NewRouter(localClient, geminiClient)
-	log.Printf("[System] 🛤️  LLM Router initialized (Cloud: %s | Local: %s)",
-		geminiClient.Name(), localClient.Name())
+	llmRouter := llm.NewRouter(localLLMClient, localEmbedClient, geminiClient)
+	log.Printf("[System] 🛤️  LLM Router initialized (Cloud: %s | Local LLM: %s | Local Embed: %s)",
+		geminiClient.Name(), localLLMClient.Name(), localEmbedClient.Name())
 
-	// Pull configured Ollama model at startup (dynamic model management)
-	log.Printf("[System] 📥 Ensuring local model '%s' is available...", cfg.OllamaModel)
-	if err := localClient.PullModel(ctx, cfg.OllamaModel); err != nil {
-		log.Printf("[Warning] 📥 Failed to pull model '%s' at startup: %v. The system will attempt to run with existing models.", cfg.OllamaModel, err)
+	// Pull configured Ollama models at startup
+	log.Printf("[System] 📥 Ensuring local models '%s' and '%s' are available...", cfg.OllamaLLMModel, cfg.OllamaEmbedModel)
+	if err := localLLMClient.PullModel(ctx, cfg.OllamaLLMModel); err != nil {
+		log.Printf("[Warning] 📥 Failed to pull LLM model '%s': %v", cfg.OllamaLLMModel, err)
+	}
+	if err := localEmbedClient.PullModel(ctx, cfg.OllamaEmbedModel); err != nil {
+		log.Printf("[Warning] 📥 Failed to pull Embed model '%s': %v", cfg.OllamaEmbedModel, err)
 	}
 
 	// Initialize gRPC clients

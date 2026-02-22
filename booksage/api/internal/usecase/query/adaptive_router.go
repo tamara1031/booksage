@@ -31,7 +31,7 @@ func (r *AdaptiveRouter) DetermineStrategy(ctx context.Context, query string) (S
 	if r == nil || r.router == nil {
 		return StrategyFactual, nil
 	}
-	client := r.router.RouteLLMTask(repository.TaskType("agentic_reasoning"))
+	client := r.router.RouteLLMTask(repository.TaskType("simple_keyword_extraction"))
 	if client == nil {
 		return StrategyFactual, nil
 	}
