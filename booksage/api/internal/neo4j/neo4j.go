@@ -161,6 +161,53 @@ func (c *Client) DocumentExists(ctx context.Context, docID string) (bool, error)
 	return cnt > 0, nil
 }
 
+// SearchChunks performs a text search on Chunk nodes using keyword matching.
+// Returns up to `limit` results.
+func (c *Client) SearchChunks(ctx context.Context, query string, limit int) ([]ChunkSearchResult, error) {
+	cypher := `
+		MATCH (c:Chunk)
+		WHERE c.text CONTAINS $query
+		RETURN c.node_id AS node_id, c.text AS text, c.doc_id AS doc_id, c.page_number AS page_number
+		LIMIT $limit
+	`
+
+	result, err := neo4j.ExecuteQuery(ctx, c.driver, cypher,
+		map[string]any{"query": query, "limit": limit},
+		neo4j.EagerResultTransformer,
+		neo4j.ExecuteQueryWithDatabase(""),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("neo4j search failed: %w", err)
+	}
+
+	var out []ChunkSearchResult
+	for _, record := range result.Records {
+		nodeID, _, _ := neo4j.GetRecordValue[string](record, "node_id")
+		text, _, _ := neo4j.GetRecordValue[string](record, "text")
+		docID, _, _ := neo4j.GetRecordValue[string](record, "doc_id")
+		pageNumber, _, _ := neo4j.GetRecordValue[int64](record, "page_number")
+
+		out = append(out, ChunkSearchResult{
+			NodeID:     nodeID,
+			Text:       text,
+			DocID:      docID,
+			PageNumber: int32(pageNumber),
+			Score:      0.5, // Fixed score for text match (no ranking in CONTAINS)
+		})
+	}
+
+	return out, nil
+}
+
+// ChunkSearchResult represents a search result from Neo4j.
+type ChunkSearchResult struct {
+	NodeID     string
+	Text       string
+	DocID      string
+	PageNumber int32
+	Score      float32
+}
+
 // Close closes the underlying Neo4j driver.
 func (c *Client) Close(ctx context.Context) error {
 	return c.driver.Close(ctx)

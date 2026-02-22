@@ -10,6 +10,7 @@ import (
 	"github.com/booksage/booksage-api/internal/config"
 	"github.com/booksage/booksage-api/internal/database/bunstore"
 	"github.com/booksage/booksage-api/internal/embedding"
+	"github.com/booksage/booksage-api/internal/fusion"
 	"github.com/booksage/booksage-api/internal/ingest"
 	"github.com/booksage/booksage-api/internal/llm"
 	neo4jpkg "github.com/booksage/booksage-api/internal/neo4j"
@@ -69,8 +70,8 @@ func main() {
 	log.Printf("[System] 🛤️  LLM Router initialized (Cloud: %s | Local: %s)",
 		geminiClient.Name(), localClient.Name())
 
-	// Inject the Router into the Agentic Generator
-	generator := agent.NewGenerator(llmRouter)
+	// NOTE: Generator will be initialized after DB clients so we can inject the retriever.
+	// See below after Qdrant/Neo4j initialization.
 
 	// Initialize gRPC clients
 	parserClient := pb.NewDocumentParserServiceClient(conn)
@@ -103,6 +104,12 @@ func main() {
 	defer func() { _ = neo4jClient.Close(ctx) }()
 
 	sagaOrchestrator := ingest.NewOrchestrator(qdrantClient, neo4jClient, bunStore, bunStore)
+
+	// Initialize the Fusion Retriever (Qdrant + Neo4j + Embedding)
+	fusionRetriever := fusion.NewFusionRetriever(qdrantClient, neo4jClient, embedBatcher)
+
+	// Inject the Router and Retriever into the Agentic Generator
+	generator := agent.NewGenerator(llmRouter, fusionRetriever)
 
 	// ==========================================
 	// Initialize and Start HTTP Server

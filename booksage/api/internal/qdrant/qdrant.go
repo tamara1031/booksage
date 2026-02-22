@@ -170,6 +170,56 @@ func (c *Client) DeleteDocument(ctx context.Context, docID string) error {
 	return nil
 }
 
+// Search performs a dense vector similarity search in the collection.
+// Returns up to `limit` results with their text payloads and scores.
+func (c *Client) Search(ctx context.Context, queryVector []float32, limit uint64) ([]SearchResult, error) {
+	results, err := c.client.Query(ctx, &pb.QueryPoints{
+		CollectionName: c.collection,
+		Query:          pb.NewQuery(queryVector...),
+		Limit:          pb.PtrOf(limit),
+		WithPayload:    pb.NewWithPayload(true),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("qdrant search failed: %w", err)
+	}
+
+	var out []SearchResult
+	for _, point := range results {
+		text := ""
+		docID := ""
+		pageNum := int32(0)
+
+		if val, ok := point.Payload["text"]; ok {
+			text = val.GetStringValue()
+		}
+		if val, ok := point.Payload["doc_id"]; ok {
+			docID = val.GetStringValue()
+		}
+		if val, ok := point.Payload["page_number"]; ok {
+			pageNum = int32(val.GetIntegerValue())
+		}
+
+		out = append(out, SearchResult{
+			ID:         fmt.Sprintf("%d", point.Id.GetNum()),
+			Text:       text,
+			DocID:      docID,
+			PageNumber: pageNum,
+			Score:      point.Score,
+		})
+	}
+
+	return out, nil
+}
+
+// SearchResult represents a single search result from Qdrant.
+type SearchResult struct {
+	ID         string
+	Text       string
+	DocID      string
+	PageNumber int32
+	Score      float32
+}
+
 // DocumentExists checks if any points exist for the given document ID.
 func (c *Client) DocumentExists(ctx context.Context, docID string) (bool, error) {
 	result, err := c.client.Scroll(ctx, &pb.ScrollPoints{

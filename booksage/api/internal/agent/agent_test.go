@@ -29,7 +29,7 @@ func TestGenerateAnswer_Success(t *testing.T) {
 	gemini := &mockClient{name: "gemini", resp: "Final reasoned answer"}
 	router := llm.NewRouter(local, gemini)
 
-	gen := NewGenerator(router)
+	gen := NewGenerator(router, nil)
 
 	eventStream := make(chan GeneratorEvent, 10)
 	go gen.GenerateAnswer(context.Background(), "test query", eventStream)
@@ -56,9 +56,9 @@ func TestGenerateAnswer_LocalFails(t *testing.T) {
 	gemini := &mockClient{name: "gemini", resp: "Final reasoned answer"}
 	router := llm.NewRouter(local, gemini)
 
-	gen := NewGenerator(router)
+	gen := NewGenerator(router, nil)
 
-	eventStream := make(chan GeneratorEvent, 10)
+	eventStream := make(chan GeneratorEvent, 20)
 	go gen.GenerateAnswer(context.Background(), "test query", eventStream)
 
 	var lastEvent GeneratorEvent
@@ -66,8 +66,10 @@ func TestGenerateAnswer_LocalFails(t *testing.T) {
 		lastEvent = ev
 	}
 
-	if lastEvent.Type != "error" {
-		t.Errorf("Expected final event to be error, got %s", lastEvent.Type)
+	// Keyword extraction failure is non-fatal (falls back to raw query),
+	// so the final event should be an answer from gemini.
+	if lastEvent.Type != "answer" {
+		t.Errorf("Expected final event to be answer (keyword failure is non-fatal), got %s: %s", lastEvent.Type, lastEvent.Content)
 	}
 }
 
@@ -76,7 +78,7 @@ func TestGenerateAnswer_GeminiFails(t *testing.T) {
 	gemini := &mockClient{name: "gemini", err: errors.New("gemini error")}
 	router := llm.NewRouter(local, gemini)
 
-	gen := NewGenerator(router)
+	gen := NewGenerator(router, nil)
 
 	eventStream := make(chan GeneratorEvent, 10)
 	go gen.GenerateAnswer(context.Background(), "test query", eventStream)
