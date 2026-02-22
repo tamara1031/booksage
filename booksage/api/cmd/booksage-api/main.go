@@ -116,10 +116,10 @@ func main() {
 	defer func() { _ = neo4jClient.Close(ctx) }()
 
 	// Saga Orchestrator (DDD Usecase)
-	sagaOrchestrator := ingest.NewSagaOrchestrator(qdrantClient, neo4jClient, bunStore, bunStore)
+	sagaOrchestrator := ingest.NewSagaOrchestrator(qdrantClient, neo4jClient, bunStore, bunStore, llmRouter, embeddingClient)
 
 	// Initialize the Fusion Retriever (DDD Usecase)
-	fusionRetriever := query.NewFusionRetriever(qdrantClient, neo4jClient, embedBatcher)
+	fusionRetriever := query.NewFusionRetriever(qdrantClient, neo4jClient, embedBatcher, llmRouter)
 
 	// Inject the Router and Retriever into the Agentic Generator (DDD Usecase)
 	generator := query.NewGenerator(llmRouter, fusionRetriever)

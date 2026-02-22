@@ -7,6 +7,8 @@ class ExtractedElement(BaseModel):
     content: str
     type: str = "text"
     page_number: int = 1
+    level: int = 0  # H1=1, H2=2, etc. 0 = regular text
+    metadata: dict[str, str] = Field(default_factory=dict)
 
 
 class RawDocument(BaseModel):

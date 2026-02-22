@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,71 +18,74 @@ type FusionRetriever struct {
 	vectorStore repository.VectorRepository
 	graphStore  repository.GraphRepository
 	embedder    *embedding.Batcher
-	classifier  *IntentClassifier
-	operator    *RouteOperator
+	router      *AdaptiveRouter
+	extractor   *DualKeyExtractor
+	ranker      *SkylineRanker
 }
 
 // NewFusionRetriever creates a new FusionRetriever with repository interfaces.
-func NewFusionRetriever(vectorStore repository.VectorRepository, graphStore repository.GraphRepository, embedder *embedding.Batcher) *FusionRetriever {
+func NewFusionRetriever(vectorStore repository.VectorRepository, graphStore repository.GraphRepository, embedder *embedding.Batcher, llmRouter repository.LLMRouter) *FusionRetriever {
 	return &FusionRetriever{
 		vectorStore: vectorStore,
 		graphStore:  graphStore,
 		embedder:    embedder,
-		classifier:  &IntentClassifier{},
-		operator:    NewRouteOperator(),
+		router:      NewAdaptiveRouter(llmRouter),
+		extractor:   NewDualKeyExtractor(llmRouter),
+		ranker:      &SkylineRanker{},
 	}
 }
 
-// Retrieve performs asynchronous parallel requests across engines and ensembles them.
+// Retrieve performs asynchronous parallel requests across engines and ensembles them using SOTA techniques.
 func (f *FusionRetriever) Retrieve(ctx context.Context, query string) ([]repository.SearchResult, error) {
-	log.Printf("[Fusion] Starting parallel retrieval for: %s", query)
+	log.Printf("[Fusion] Starting SOTA parallel retrieval for: %s", query)
 
-	// Classify query intent for weighted fusion
-	intent := f.classifier.Classify(query)
-	weights := f.operator.GetWeights(intent)
-	log.Printf("[Fusion] Intent: %s | Weights: %v", intent, weights)
+	// 1. Adaptive Routing
+	strategy, _ := f.router.DetermineStrategy(ctx, query)
+	log.Printf("[Fusion] Strategy selected: %s", strategy)
 
-	// Add a global timeout for the entire fusion process.
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// 2. Dual-level Key Extraction
+	keys, _ := f.extractor.ExtractKeys(ctx, query)
+	log.Printf("[Fusion] Extracted Keys: Entities=%v, Themes=%v", keys.Entities, keys.Themes)
+
+	// Add a global timeout
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	g, ctx := errgroup.WithContext(ctx)
-
 	var mu sync.Mutex
 	var allResults []repository.SearchResult
 
-	// 1. Vector Engine (Qdrant Dense Search)
+	// 3. Parallel Retrieval
+	// Engine A: Vector Search (Entities/Low-level)
 	g.Go(func() error {
-		log.Println("[Fusion] Dispatching Vector Engine request...")
-		docs, err := f.searchVectorDB(ctx, query)
-		if err != nil {
-			log.Printf("Warning: Vector DB search failed, degrading gracefully: %v", err)
-			return nil
+		log.Println("[Fusion] Dispatching Entity-based Vector Search...")
+		searchTerm := query
+		if len(keys.Entities) > 0 {
+			searchTerm = strings.Join(keys.Entities, " ")
 		}
-		mu.Lock()
-		allResults = append(allResults, docs...)
-		mu.Unlock()
+		docs, err := f.searchVectorDB(ctx, searchTerm)
+		if err == nil {
+			mu.Lock()
+			allResults = append(allResults, docs...)
+			mu.Unlock()
+		}
 		return nil
 	})
 
-	// 2. Graph Engine (Neo4j)
+	// Engine B: Graph Search (Structural context)
 	g.Go(func() error {
-		log.Println("[Fusion] Dispatching Graph Engine request...")
-		docs, err := f.searchGraphDB(ctx, query)
-		if err != nil {
-			log.Printf("Warning: Graph DB search failed, degrading gracefully: %v", err)
-			return nil
+		log.Println("[Fusion] Dispatching Graph/Theme Search...")
+		// Use themes for graph search if strategy is summary
+		searchTerm := query
+		if strategy == StrategySummary && len(keys.Themes) > 0 {
+			searchTerm = strings.Join(keys.Themes, " ")
 		}
-		mu.Lock()
-		allResults = append(allResults, docs...)
-		mu.Unlock()
-		return nil
-	})
-
-	// 3. RAPTOR/Tree Engine (placeholder for Phase 3)
-	g.Go(func() error {
-		log.Println("[Fusion] Dispatching Tree/RAPTOR Engine request (stub)...")
-		// RAPTOR tree search will be implemented in Phase 3.
+		docs, err := f.searchGraphDB(ctx, searchTerm)
+		if err == nil {
+			mu.Lock()
+			allResults = append(allResults, docs...)
+			mu.Unlock()
+		}
 		return nil
 	})
 
@@ -89,13 +93,14 @@ func (f *FusionRetriever) Retrieve(ctx context.Context, query string) ([]reposit
 		return nil, err
 	}
 
-	log.Printf("[Fusion] Retrieval complete. Integrating %d total results via weighted RRF...", len(allResults))
-	return f.performWeightedRRF(allResults, weights), nil
+	log.Printf("[Fusion] Retrieval complete. Integrating %d results via Skyline Ranker...", len(allResults))
+	return f.ranker.Rank(allResults), nil
 }
 
 // LastIntent returns the intent from the most recent classification (for SSE reporting).
-func (f *FusionRetriever) ClassifyIntent(query string) QueryIntent {
-	return f.classifier.Classify(query)
+func (f *FusionRetriever) ClassifyIntent(ctx context.Context, query string) Strategy {
+	s, _ := f.router.DetermineStrategy(ctx, query)
+	return s
 }
 
 // searchVectorDB queries Qdrant using dense vector similarity.
@@ -158,54 +163,4 @@ func (f *FusionRetriever) searchGraphDB(ctx context.Context, query string) ([]re
 
 	log.Printf("[Fusion] Graph search returned %d results", len(out))
 	return out, nil
-}
-
-// performWeightedRRF applies intent-weighted Reciprocal Rank Fusion.
-func (f *FusionRetriever) performWeightedRRF(results []repository.SearchResult, weights EngineWeights) []repository.SearchResult {
-	if len(results) == 0 {
-		return results
-	}
-
-	const k = 60.0
-
-	// Group by source for per-engine rankings
-	sourceGroups := map[string][]repository.SearchResult{}
-	for _, r := range results {
-		sourceGroups[r.Source] = append(sourceGroups[r.Source], r)
-	}
-
-	// Calculate weighted RRF scores
-	rrfScores := map[string]float32{}
-	rrfContent := map[string]repository.SearchResult{}
-	for source, group := range sourceGroups {
-		weight := weights[source]
-		if weight == 0 {
-			weight = 0.33
-		}
-		for rank, r := range group {
-			rrfScore := float32(1.0/(k+float64(rank+1))) * weight
-			key := r.Content
-			rrfScores[key] += rrfScore
-			if _, exists := rrfContent[key]; !exists {
-				rrfContent[key] = r
-			}
-		}
-	}
-
-	var fused []repository.SearchResult
-	for key, r := range rrfContent {
-		r.Score = rrfScores[key]
-		fused = append(fused, r)
-	}
-
-	// Sort descending
-	for i := 0; i < len(fused); i++ {
-		for j := i + 1; j < len(fused); j++ {
-			if fused[j].Score > fused[i].Score {
-				fused[i], fused[j] = fused[j], fused[i]
-			}
-		}
-	}
-
-	return fused
 }

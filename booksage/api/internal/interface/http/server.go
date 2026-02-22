@@ -283,8 +283,15 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 			}
 			// Propagate structural metadata from ParseResponse
 			if i < len(parsedResp.Documents) {
-				chunk["page_number"] = int(parsedResp.Documents[i].PageNumber)
-				chunk["type"] = parsedResp.Documents[i].Type
+				doc := parsedResp.Documents[i]
+				chunk["page_number"] = int(doc.PageNumber)
+				chunk["type"] = doc.Type
+				if levelStr, ok := doc.Metadata["level"]; ok {
+					var level int
+					if _, err := fmt.Sscanf(levelStr, "%d", &level); err == nil {
+						chunk["level"] = level
+					}
+				}
 			}
 			chunks = append(chunks, chunk)
 		}
@@ -292,12 +299,19 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		// Prepare Neo4j Nodes (with enriched metadata)
 		var graphNodes []map[string]any
 		for i, doc := range parsedResp.Documents {
-			graphNodes = append(graphNodes, map[string]any{
+			node := map[string]any{
 				"id":          fmt.Sprintf("%s-node-%d", parsedResp.DocumentId, i),
 				"text":        doc.Content,
 				"type":        doc.Type,
 				"page_number": int(doc.PageNumber),
-			})
+			}
+			if levelStr, ok := doc.Metadata["level"]; ok {
+				var level int
+				if _, err := fmt.Sscanf(levelStr, "%d", &level); err == nil {
+					node["level"] = level
+				}
+			}
+			graphNodes = append(graphNodes, node)
 		}
 
 		// Run the Saga Orchestrator

@@ -15,17 +15,19 @@ from booksage.config import load
 # (e.g., etl/ and generation/) and will be injected into the server.
 # ============================================================================
 from booksage.domain.models import DocumentMetadata
+from booksage.etl.docling_adapter import DoclingParser
 from booksage.etl.epub_adapter import EpubParser
 from booksage.etl.ports import IDocumentParser
-from booksage.etl.pymupdf_adapter import PyMuPDFParser
 from booksage.pb.booksage.v1 import booksage_pb2, booksage_pb2_grpc
 
 
 class DocumentParser:
     def __init__(self):
         # Setup the router/registry of parsers based on extension
+        # Docling is now the primary parser for structured RAG
         self.parsers: dict[str, IDocumentParser] = {
-            ".pdf": PyMuPDFParser(),
+            ".pdf": DoclingParser(),
+            ".docx": DoclingParser(),
             ".epub": EpubParser(),
         }
 
@@ -41,8 +43,8 @@ class DocumentParser:
         parser = self.parsers.get(ext)
         if not parser:
             logger = logging.getLogger(__name__)
-            logger.warning(f"No specific parser found for extension {ext}, using PyMuPDF fallback.")
-            parser = PyMuPDFParser()
+            logger.warning(f"No specific parser found for extension {ext}, using Docling fallback.")
+            parser = DoclingParser()
 
         # Build basic domain metadata object
         metadata = DocumentMetadata(
@@ -68,6 +70,8 @@ class DocumentParser:
                     "content": el.content,
                     "type": el.type,
                     "page_number": el.page_number,
+                    "level": el.level,
+                    "extra_metadata": el.metadata,
                 }
                 for el in raw_doc.elements
             ],
@@ -137,6 +141,10 @@ class BookSageWorker(booksage_pb2_grpc.DocumentParserServiceServicer):
                         content=doc["content"],
                         type=doc["type"],
                         page_number=doc["page_number"],
+                        metadata={
+                            "level": str(doc.get("level", 0)),
+                            **doc.get("extra_metadata", {}),
+                        },
                     )
                     for doc in chunk_docs
                 ]

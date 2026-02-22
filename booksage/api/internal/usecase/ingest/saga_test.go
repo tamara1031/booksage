@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/booksage/booksage-api/internal/database/models"
@@ -44,12 +45,35 @@ func (m *mockNeo4j) SearchChunks(ctx context.Context, query string, limit int) (
 }
 func (m *mockNeo4j) Close(ctx context.Context) error { return nil }
 
+type mockRouter struct{}
+
+func (m *mockRouter) RouteLLMTask(task repository.TaskType) repository.LLMClient {
+	return &mockLLM{}
+}
+
+type mockLLM struct{}
+
+func (m *mockLLM) Generate(ctx context.Context, prompt string) (string, error) {
+	if strings.Contains(prompt, "entities") {
+		return `{"entities":[], "relations":[]}`, nil
+	}
+	return "summary", nil
+}
+func (m *mockLLM) Name() string { return "mock" }
+
+type mockEmbeddingClient struct{}
+
+func (m *mockEmbeddingClient) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return [][]float32{{0.1, 0.2, 0.3}}, nil
+}
+func (m *mockEmbeddingClient) Name() string { return "mock_emb" }
+
 func TestSaga_Success(t *testing.T) {
 	q := &mockQdrant{}
 	n := &mockNeo4j{}
 	docRepo := &MockDocumentRepository{}
 	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo)
+	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
 
 	err := orch.RunIngestionSaga(context.Background(), &models.IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []map[string]any{{"text": "chunk1"}}, []map[string]any{{"text": "node1"}})
 	if err != nil {
@@ -66,7 +90,7 @@ func TestSaga_QdrantFails(t *testing.T) {
 	n := &mockNeo4j{}
 	docRepo := &MockDocumentRepository{}
 	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo)
+	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
 
 	err := orch.RunIngestionSaga(context.Background(), &models.IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []map[string]any{{"text": "chunk1"}}, []map[string]any{{"text": "node1"}})
 	if err == nil {
@@ -87,7 +111,7 @@ func TestSaga_Neo4jFails_CompensatesQdrant(t *testing.T) {
 	n := &mockNeo4j{insertErr: errors.New("neo4j error")}
 	docRepo := &MockDocumentRepository{}
 	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo)
+	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
 
 	err := orch.RunIngestionSaga(context.Background(), &models.IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []map[string]any{{"text": "chunk1"}}, []map[string]any{{"text": "node1"}})
 	if err == nil {
@@ -104,7 +128,7 @@ func TestSaga_Neo4jFails_CompensationFails(t *testing.T) {
 	n := &mockNeo4j{insertErr: errors.New("neo4j error")}
 	docRepo := &MockDocumentRepository{}
 	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo)
+	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
 
 	err := orch.RunIngestionSaga(context.Background(), &models.IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []map[string]any{{"text": "chunk1"}}, []map[string]any{{"text": "node1"}})
 	if err == nil {
@@ -121,7 +145,7 @@ func TestStartOrResumeIngestion_NewDocument(t *testing.T) {
 	n := &mockNeo4j{}
 	docRepo := &MockDocumentRepository{}
 	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo)
+	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
 
 	doc := &models.Document{
 		FileHash: []byte{0xAA, 0xBB}, // Not 0xF1, so mock returns nil (new doc)
@@ -148,7 +172,7 @@ func TestStartOrResumeIngestion_AlreadyIngested(t *testing.T) {
 	n := &mockNeo4j{}
 	docRepo := &MockDocumentRepository{}
 	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo)
+	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
 
 	// 0xF1 triggers mock to return existing doc with ID=100
 	// ID=100 triggers mock saga repo to return completed saga
@@ -176,7 +200,7 @@ func TestStartOrResumeIngestion_ExistingDocNoSaga(t *testing.T) {
 	// so the saga repo returns nil (no existing saga)
 	docRepo := &mockDocRepoWithID{id: 50}
 	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo)
+	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
 
 	doc := &models.Document{
 		FileHash: []byte{0xF1, 0x01},
@@ -197,7 +221,7 @@ func TestGetDocumentStatus(t *testing.T) {
 	n := &mockNeo4j{}
 	docRepo := &MockDocumentRepository{}
 	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo)
+	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
 
 	// 0xF1 hash → doc ID 100 → completed saga
 	saga, err := orch.GetDocumentStatus(context.Background(), []byte{0xF1, 0x00})
