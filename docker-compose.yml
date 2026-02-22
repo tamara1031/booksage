@@ -10,6 +10,12 @@ services:
       - SAGE_OLLAMA_HOST=${SAGE_OLLAMA_HOST:-http://ollama:11434}
       - SAGE_USE_LOCAL_ONLY_LLM=${SAGE_USE_LOCAL_ONLY_LLM:-true}
       - SAGE_GEMINI_API_KEY=${SAGE_GEMINI_API_KEY}
+      - SAGE_QDRANT_HOST=${SAGE_QDRANT_HOST:-qdrant}
+      - SAGE_QDRANT_PORT=${SAGE_QDRANT_PORT:-6334}
+      - SAGE_QDRANT_COLLECTION=${SAGE_QDRANT_COLLECTION:-booksage}
+      - SAGE_NEO4J_URI=${SAGE_NEO4J_URI:-neo4j://neo4j:7687}
+      - SAGE_NEO4J_USER=${SAGE_NEO4J_USER:-neo4j}
+      - SAGE_NEO4J_PASSWORD=${SAGE_NEO4J_PASSWORD:-booksage_dev}
     restart: unless-stopped
     deploy:
       resources:

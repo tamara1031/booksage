@@ -19,6 +19,16 @@ type Config struct {
 	DefaultTimeout   time.Duration
 	EmbeddingTimeout time.Duration
 	ParserTimeout    time.Duration
+
+	// Qdrant Vector DB
+	QdrantHost       string
+	QdrantPort       int
+	QdrantCollection string
+
+	// Neo4j Graph DB
+	Neo4jURI      string
+	Neo4jUser     string
+	Neo4jPassword string
 }
 
 // Validate ensures that all required configuration is present and valid.
@@ -43,6 +53,14 @@ func Load() *Config {
 		DefaultTimeout:   getEnvDuration("SAGE_DEFAULT_TIMEOUT_SEC", 30) * time.Second,
 		EmbeddingTimeout: getEnvDuration("SAGE_EMBEDDING_TIMEOUT_SEC", 5) * time.Second,
 		ParserTimeout:    getEnvDuration("SAGE_PARSER_TIMEOUT_SEC", 60) * time.Second,
+
+		QdrantHost:       getEnv("SAGE_QDRANT_HOST", "localhost"),
+		QdrantPort:       getEnvInt("SAGE_QDRANT_PORT", 6334),
+		QdrantCollection: getEnv("SAGE_QDRANT_COLLECTION", "booksage"),
+
+		Neo4jURI:      getEnv("SAGE_NEO4J_URI", "neo4j://localhost:7687"),
+		Neo4jUser:     getEnv("SAGE_NEO4J_USER", "neo4j"),
+		Neo4jPassword: getEnv("SAGE_NEO4J_PASSWORD", "booksage_dev"),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -77,4 +95,17 @@ func getEnvDuration(key string, fallback int) time.Duration {
 		return time.Duration(fallback)
 	}
 	return time.Duration(value)
+}
+
+func getEnvInt(key string, fallback int) int {
+	valueStr := getEnv(key, "")
+	if valueStr == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		log.Printf("[Config] Warning: Invalid int for %s: %v. Using fallback %d", key, err, fallback)
+		return fallback
+	}
+	return value
 }

@@ -12,7 +12,9 @@ import (
 	"github.com/booksage/booksage-api/internal/embedding"
 	"github.com/booksage/booksage-api/internal/ingest"
 	"github.com/booksage/booksage-api/internal/llm"
+	neo4jpkg "github.com/booksage/booksage-api/internal/neo4j"
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
+	qdrantpkg "github.com/booksage/booksage-api/internal/qdrant"
 	"github.com/booksage/booksage-api/internal/server"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"github.com/uptrace/bun/driver/sqliteshim"
@@ -88,9 +90,19 @@ func main() {
 		log.Fatalf("[Error] Failed to initialize Database: %v", err)
 	}
 
-	qdrantMock := ingest.NewMockQdrantClient()
-	neo4jMock := ingest.NewMockNeo4jClient()
-	sagaOrchestrator := ingest.NewOrchestrator(qdrantMock, neo4jMock, bunStore, bunStore)
+	qdrantClient, err := qdrantpkg.NewClient(cfg.QdrantHost, cfg.QdrantPort, cfg.QdrantCollection)
+	if err != nil {
+		log.Fatalf("[Error] Failed to connect to Qdrant: %v", err)
+	}
+	defer func() { _ = qdrantClient.Close() }()
+
+	neo4jClient, err := neo4jpkg.NewClient(ctx, cfg.Neo4jURI, cfg.Neo4jUser, cfg.Neo4jPassword)
+	if err != nil {
+		log.Fatalf("[Error] Failed to connect to Neo4j: %v", err)
+	}
+	defer func() { _ = neo4jClient.Close(ctx) }()
+
+	sagaOrchestrator := ingest.NewOrchestrator(qdrantClient, neo4jClient, bunStore, bunStore)
 
 	// ==========================================
 	// Initialize and Start HTTP Server
