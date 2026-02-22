@@ -3,7 +3,7 @@ import logging
 import os
 import tempfile
 from collections.abc import AsyncIterable
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
 import grpc
 
