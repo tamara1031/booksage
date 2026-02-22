@@ -3,7 +3,7 @@
 This guide provides instructions for setting up the local development environment for the BookSage Hybrid Architecture project. The project is split into a Go-based Orchestrator API and a Python-based ML Worker.
 
 ## Prerequisites
-- Go 1.24+
+- Go 1.25+
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
 - Protobuf Compiler (`protoc`)
@@ -57,9 +57,25 @@ Copy the `.env.example` file to create your local `.env` file in the **repositor
 ```bash
 cp .env.example .env
 ```
-Ensure you add your actual API keys (e.g., `BS_GEMINI_API_KEY`) to the `.env` file. Both Go and Python services, as well as **Docker Compose**, will read from this file.
+Ensure you add your actual API keys (e.g., `SAGE_GEMINI_API_KEY`) to the `.env` file. Both Go and Python services, as well as **Docker Compose**, will read from this file.
 
-*Note: If you want to run the system entirely offline without Gemini, set `BS_USE_LOCAL_ONLY_LLM=true` in your `.env`.*
+*Note: If you want to run the system entirely offline without Gemini, set `SAGE_USE_LOCAL_ONLY_LLM=true` in your `.env`.*
+
+### Key Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `SAGE_WORKER_ADDR` | `worker:50051` | gRPC address of the Python ML Worker |
+| `SAGE_GEMINI_API_KEY` | *(none)* | Google Gemini API key |
+| `SAGE_OLLAMA_HOST` | `http://ollama:11434` | Ollama LLM host |
+| `SAGE_OLLAMA_MODEL` | `llama3` | Ollama model name |
+| `SAGE_USE_LOCAL_ONLY_LLM` | `false` | Route all LLM tasks to local Ollama |
+| `SAGE_QDRANT_HOST` | `qdrant` | Qdrant vector DB host |
+| `SAGE_QDRANT_PORT` | `6334` | Qdrant gRPC port |
+| `SAGE_QDRANT_COLLECTION` | `booksage` | Qdrant collection name |
+| `SAGE_NEO4J_URI` | `neo4j://neo4j:7687` | Neo4j Bolt URI |
+| `SAGE_NEO4J_USER` | `neo4j` | Neo4j username |
+| `SAGE_NEO4J_PASSWORD` | `booksage_dev` | Neo4j password |
 
 ## 4. Infrastructure Setup (Docker Compose)
 

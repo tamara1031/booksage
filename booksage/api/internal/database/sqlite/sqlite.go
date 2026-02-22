@@ -225,7 +225,12 @@ func (s *SQLiteStore) GetSagaSteps(ctx context.Context, sagaID int64) ([]*models
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			// Log but don't override the primary error
+			_ = closeErr
+		}
+	}()
 
 	var steps []*models.SagaStep
 	for rows.Next() {

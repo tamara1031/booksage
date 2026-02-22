@@ -111,3 +111,120 @@ func TestSaga_Neo4jFails_CompensationFails(t *testing.T) {
 		t.Errorf("Expected Qdrant to be compensated (DeleteDocument called even if failed)")
 	}
 }
+
+func TestStartOrResumeIngestion_NewDocument(t *testing.T) {
+	q := &mockQdrant{}
+	n := &mockNeo4j{}
+	docRepo := &MockDocumentRepository{}
+	sagaRepo := &MockSagaRepository{}
+	orch := NewOrchestrator(q, n, docRepo, sagaRepo)
+
+	doc := &models.Document{
+		FileHash: []byte{0xAA, 0xBB}, // Not 0xF1, so mock returns nil (new doc)
+		Title:    "New Book",
+	}
+
+	saga, err := orch.StartOrResumeIngestion(context.Background(), doc)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if saga == nil {
+		t.Fatal("Expected saga, got nil")
+	}
+	if saga.Status != models.SagaStatusPending {
+		t.Errorf("Expected pending status, got %v", saga.Status)
+	}
+	if saga.CurrentStep != models.StepParsing {
+		t.Errorf("Expected parsing step, got %v", saga.CurrentStep)
+	}
+}
+
+func TestStartOrResumeIngestion_AlreadyIngested(t *testing.T) {
+	q := &mockQdrant{}
+	n := &mockNeo4j{}
+	docRepo := &MockDocumentRepository{}
+	sagaRepo := &MockSagaRepository{}
+	orch := NewOrchestrator(q, n, docRepo, sagaRepo)
+
+	// 0xF1 triggers mock to return existing doc with ID=100
+	// ID=100 triggers mock saga repo to return completed saga
+	doc := &models.Document{
+		FileHash: []byte{0xF1, 0x00},
+		Title:    "Already Ingested Book",
+	}
+
+	_, err := orch.StartOrResumeIngestion(context.Background(), doc)
+	if err == nil {
+		t.Fatal("Expected error for already ingested document")
+	}
+	if !errors.Is(err, nil) {
+		// Check error message contains "already ingested"
+		if err.Error() != "document already ingested: f100" {
+			t.Errorf("Unexpected error: %v", err)
+		}
+	}
+}
+
+func TestStartOrResumeIngestion_ExistingDocNoSaga(t *testing.T) {
+	q := &mockQdrant{}
+	n := &mockNeo4j{}
+	// Create a custom docRepo that returns an existing doc but with a non-100 ID
+	// so the saga repo returns nil (no existing saga)
+	docRepo := &mockDocRepoWithID{id: 50}
+	sagaRepo := &MockSagaRepository{}
+	orch := NewOrchestrator(q, n, docRepo, sagaRepo)
+
+	doc := &models.Document{
+		FileHash: []byte{0xF1, 0x01},
+		Title:    "Existing Doc No Saga",
+	}
+
+	saga, err := orch.StartOrResumeIngestion(context.Background(), doc)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if saga == nil {
+		t.Fatal("Expected saga, got nil")
+	}
+}
+
+func TestGetDocumentStatus(t *testing.T) {
+	q := &mockQdrant{}
+	n := &mockNeo4j{}
+	docRepo := &MockDocumentRepository{}
+	sagaRepo := &MockSagaRepository{}
+	orch := NewOrchestrator(q, n, docRepo, sagaRepo)
+
+	// 0xF1 hash → doc ID 100 → completed saga
+	saga, err := orch.GetDocumentStatus(context.Background(), []byte{0xF1, 0x00})
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if saga == nil {
+		t.Fatal("Expected saga, got nil")
+	}
+	if saga.Status != models.SagaStatusCompleted {
+		t.Errorf("Expected completed status, got %v", saga.Status)
+	}
+}
+
+// mockDocRepoWithID returns a fixed doc for any hash query
+type mockDocRepoWithID struct {
+	id int64
+}
+
+func (m *mockDocRepoWithID) CreateDocument(ctx context.Context, doc *models.Document) (int64, error) {
+	return m.id, nil
+}
+func (m *mockDocRepoWithID) GetDocumentByID(ctx context.Context, id int64) (*models.Document, error) {
+	return &models.Document{ID: id}, nil
+}
+func (m *mockDocRepoWithID) GetDocumentByHash(ctx context.Context, hash []byte) (*models.Document, error) {
+	if len(hash) > 0 && hash[0] == 0xF1 {
+		return &models.Document{ID: m.id, FileHash: hash}, nil
+	}
+	return nil, nil
+}
+func (m *mockDocRepoWithID) DeleteDocument(ctx context.Context, id int64) error {
+	return nil
+}

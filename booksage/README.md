@@ -18,7 +18,7 @@ The high-performance gateway and orchestration engine for the BookSage RAG syste
 
 ### Setup & Development
 
-- **Prerequisites**: Go 1.24+
+- **Prerequisites**: Go 1.25+
 - **Installation**: Run `go mod download` from the `api/` directory.
 - **Testing**: Use `make test-api` from the monorepo root.
 

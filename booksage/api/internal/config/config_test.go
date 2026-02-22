@@ -117,3 +117,111 @@ func TestGetEnvBoolEdgeCases(t *testing.T) {
 
 	defer os.Clearenv()
 }
+
+func TestLoadQdrantNeo4jDefaults(t *testing.T) {
+	os.Clearenv()
+	_ = os.Setenv("SAGE_GEMINI_API_KEY", "dummy")
+	defer os.Clearenv()
+
+	cfg := Load()
+
+	if cfg.QdrantHost != "localhost" {
+		t.Errorf("expected QdrantHost localhost, got %v", cfg.QdrantHost)
+	}
+	if cfg.QdrantPort != 6334 {
+		t.Errorf("expected QdrantPort 6334, got %v", cfg.QdrantPort)
+	}
+	if cfg.QdrantCollection != "booksage" {
+		t.Errorf("expected QdrantCollection booksage, got %v", cfg.QdrantCollection)
+	}
+	if cfg.Neo4jURI != "neo4j://localhost:7687" {
+		t.Errorf("expected Neo4jURI neo4j://localhost:7687, got %v", cfg.Neo4jURI)
+	}
+	if cfg.Neo4jUser != "neo4j" {
+		t.Errorf("expected Neo4jUser neo4j, got %v", cfg.Neo4jUser)
+	}
+	if cfg.Neo4jPassword != "booksage_dev" {
+		t.Errorf("expected Neo4jPassword booksage_dev, got %v", cfg.Neo4jPassword)
+	}
+}
+
+func TestLoadQdrantNeo4jOverrides(t *testing.T) {
+	os.Clearenv()
+	_ = os.Setenv("SAGE_GEMINI_API_KEY", "dummy")
+	_ = os.Setenv("SAGE_QDRANT_HOST", "qdrant-host")
+	_ = os.Setenv("SAGE_QDRANT_PORT", "6335")
+	_ = os.Setenv("SAGE_QDRANT_COLLECTION", "custom-col")
+	_ = os.Setenv("SAGE_NEO4J_URI", "neo4j://custom:7688")
+	_ = os.Setenv("SAGE_NEO4J_USER", "admin")
+	_ = os.Setenv("SAGE_NEO4J_PASSWORD", "secret")
+	defer os.Clearenv()
+
+	cfg := Load()
+
+	if cfg.QdrantHost != "qdrant-host" {
+		t.Errorf("expected QdrantHost qdrant-host, got %v", cfg.QdrantHost)
+	}
+	if cfg.QdrantPort != 6335 {
+		t.Errorf("expected QdrantPort 6335, got %v", cfg.QdrantPort)
+	}
+	if cfg.QdrantCollection != "custom-col" {
+		t.Errorf("expected QdrantCollection custom-col, got %v", cfg.QdrantCollection)
+	}
+	if cfg.Neo4jURI != "neo4j://custom:7688" {
+		t.Errorf("expected Neo4jURI neo4j://custom:7688, got %v", cfg.Neo4jURI)
+	}
+	if cfg.Neo4jUser != "admin" {
+		t.Errorf("expected Neo4jUser admin, got %v", cfg.Neo4jUser)
+	}
+	if cfg.Neo4jPassword != "secret" {
+		t.Errorf("expected Neo4jPassword secret, got %v", cfg.Neo4jPassword)
+	}
+}
+
+func TestGetEnvIntInvalid(t *testing.T) {
+	os.Clearenv()
+	_ = os.Setenv("SAGE_GEMINI_API_KEY", "dummy")
+	_ = os.Setenv("SAGE_QDRANT_PORT", "not-a-number")
+	defer os.Clearenv()
+
+	cfg := Load()
+
+	// Should fallback to default 6334
+	if cfg.QdrantPort != 6334 {
+		t.Errorf("expected QdrantPort to fallback to 6334, got %v", cfg.QdrantPort)
+	}
+}
+
+func TestValidate_MissingWorkerAddr(t *testing.T) {
+	cfg := &Config{
+		WorkerAddr:   "",
+		GeminiAPIKey: "key",
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected validation error for empty WorkerAddr")
+	}
+}
+
+func TestValidate_MissingGeminiKey(t *testing.T) {
+	cfg := &Config{
+		WorkerAddr:      "localhost:50051",
+		GeminiAPIKey:    "",
+		UseLocalOnlyLLM: false,
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected validation error for missing Gemini key when not local-only")
+	}
+}
+
+func TestValidate_Success_LocalOnly(t *testing.T) {
+	cfg := &Config{
+		WorkerAddr:      "localhost:50051",
+		UseLocalOnlyLLM: true,
+	}
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("expected no error for local-only mode, got %v", err)
+	}
+}

@@ -45,7 +45,7 @@ Wraps generation in an autonomous evaluation loop (Self-RAG):
 
 ## 3. Technology Stack
 
-- **Languages:** Go 1.24+ (API), Python 3.12+ (Worker)
+- **Languages:** Go 1.25+ (API), Python 3.12+ (Worker)
 - **Communication:** gRPC / Protocol Buffers (`proto/booksage/v1/`)
 - **Databases:** Qdrant (Vector/Tensor), Neo4j (Graph)
 - **Deployment:** Docker Compose, MicroK8s

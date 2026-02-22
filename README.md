@@ -2,7 +2,7 @@
 
 ![Status](https://img.shields.io/badge/Status-WIP-red)
 ![Architecture](https://img.shields.io/badge/Architecture-Go%2BPython_Hybrid-blue)
-![Go](https://img.shields.io/badge/Go-1.24+-00ADD8)
+![Go](https://img.shields.io/badge/Go-1.25+-00ADD8)
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 
 **BookSage** is an "Optimal Book-based RAG Generation Engine" that fully utilizes Large Language Models (LLMs) and advanced Retrieval-Augmented Generation (RAG) technologies. It specializes in processing book information that has long contexts and complex logical hierarchies.
@@ -74,10 +74,10 @@ make up
 ```
 
 The unified API will be available at `http://localhost:8080`.
-The system is configured to route heavy reasoning to Gemini API and lightweight embeddings to your local Ollama instance (configured in `.env` with `BS_` prefix, see `.env.example`).
+The system is configured to route heavy reasoning to Gemini API and lightweight embeddings to your local Ollama instance (configured in `.env` with `SAGE_` prefix, see `.env.example`).
 
 > **Note on Local-Only Mode:**
-> You can now run BookSage entirely locally without Gemini by setting `BS_USE_LOCAL_ONLY_LLM=true` in your environment. This will route all requests, including agentic reasoning, to the local Ollama container.
+> You can now run BookSage entirely locally without Gemini by setting `SAGE_USE_LOCAL_ONLY_LLM=true` in your environment. This will route all requests, including agentic reasoning, to the local Ollama container.
 
 ## 📖 Documentation
 

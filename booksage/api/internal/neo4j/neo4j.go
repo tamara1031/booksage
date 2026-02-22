@@ -10,19 +10,21 @@ import (
 
 // Client implements the ingest.Neo4jClient interface using the official Neo4j Go driver.
 type Client struct {
-	driver neo4j.DriverWithContext
+	driver neo4j.Driver
 }
 
 // NewClient creates a new Neo4j client and verifies connectivity.
 func NewClient(ctx context.Context, uri, user, password string) (*Client, error) {
-	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(user, password, ""))
+	driver, err := neo4j.NewDriver(uri, neo4j.BasicAuth(user, password, ""))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Neo4j driver for %s: %w", uri, err)
 	}
 
 	// Verify connectivity
 	if err := driver.VerifyConnectivity(ctx); err != nil {
-		driver.Close(ctx)
+		if closeErr := driver.Close(ctx); closeErr != nil {
+			log.Printf("[Neo4j] Warning: failed to close driver after connectivity check: %v", closeErr)
+		}
 		return nil, fmt.Errorf("failed to verify Neo4j connectivity at %s: %w", uri, err)
 	}
 

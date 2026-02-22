@@ -74,3 +74,22 @@ func TestLocalOllamaClient_Generate_DecodeError(t *testing.T) {
 		t.Fatalf("Expected error, got nil")
 	}
 }
+
+func TestLocalOllamaClient_ConnectionError(t *testing.T) {
+	client := NewLocalOllamaClient("http://localhost:1", "model")
+
+	_, err := client.Generate(context.Background(), "test prompt")
+	if err == nil {
+		t.Fatal("Expected connection error, got nil")
+	}
+}
+
+func TestLocalOllamaClient_Defaults(t *testing.T) {
+	client := NewLocalOllamaClient("", "")
+	if client.host != "http://localhost:11434" {
+		t.Errorf("expected default host, got %s", client.host)
+	}
+	if client.model != "llama3" {
+		t.Errorf("expected default model, got %s", client.model)
+	}
+}

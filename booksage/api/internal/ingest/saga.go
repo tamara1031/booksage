@@ -113,15 +113,21 @@ func (o *Orchestrator) RunIngestionSaga(ctx context.Context, saga *models.Ingest
 
 	log.Printf("[Saga - Step Embedding] Inserting %d chunks into Qdrant", len(chunks))
 	if err := o.qdrant.InsertChunks(ctx, strID, chunks); err != nil {
-		o.sagaRepo.UpdateSagaStatus(ctx, saga.ID, saga.Version, models.SagaStatusFailed, models.StepEmbedding, err.Error())
+		if statusErr := o.sagaRepo.UpdateSagaStatus(ctx, saga.ID, saga.Version, models.SagaStatusFailed, models.StepEmbedding, err.Error()); statusErr != nil {
+			log.Printf("[Saga] Failed to update saga status: %v", statusErr)
+		}
 		step.Status = models.SagaStatusFailed
 		step.ErrorLog = err.Error()
-		o.sagaRepo.UpsertSagaStep(ctx, step)
+		if _, stepErr := o.sagaRepo.UpsertSagaStep(ctx, step); stepErr != nil {
+			log.Printf("[Saga] Failed to upsert saga step: %v", stepErr)
+		}
 		return fmt.Errorf("qdrant insertion failed: %w", err)
 	}
 
 	step.Status = models.SagaStatusCompleted
-	o.sagaRepo.UpsertSagaStep(ctx, step)
+	if _, stepErr := o.sagaRepo.UpsertSagaStep(ctx, step); stepErr != nil {
+		log.Printf("[Saga] Failed to upsert saga step: %v", stepErr)
+	}
 
 	// Step: Indexing/Graph Store
 	step = &models.SagaStep{
@@ -137,10 +143,14 @@ func (o *Orchestrator) RunIngestionSaga(ctx context.Context, saga *models.Ingest
 		log.Printf("[Saga - Rollback] Neo4j insertion failed for saga %d. Compensating Qdrant...", saga.ID)
 
 		// Update state
-		o.sagaRepo.UpdateSagaStatus(ctx, saga.ID, saga.Version, models.SagaStatusFailed, models.StepIndexing, err.Error())
+		if statusErr := o.sagaRepo.UpdateSagaStatus(ctx, saga.ID, saga.Version, models.SagaStatusFailed, models.StepIndexing, err.Error()); statusErr != nil {
+			log.Printf("[Saga] Failed to update saga status: %v", statusErr)
+		}
 		step.Status = models.SagaStatusFailed
 		step.ErrorLog = err.Error()
-		o.sagaRepo.UpsertSagaStep(ctx, step)
+		if _, stepErr := o.sagaRepo.UpsertSagaStep(ctx, step); stepErr != nil {
+			log.Printf("[Saga] Failed to upsert saga step: %v", stepErr)
+		}
 
 		// Compensation: Rollback the Qdrant insertion
 		if compErr := o.qdrant.DeleteDocument(ctx, strID); compErr != nil {
@@ -151,7 +161,9 @@ func (o *Orchestrator) RunIngestionSaga(ctx context.Context, saga *models.Ingest
 	}
 
 	step.Status = models.SagaStatusCompleted
-	o.sagaRepo.UpsertSagaStep(ctx, step)
+	if _, stepErr := o.sagaRepo.UpsertSagaStep(ctx, step); stepErr != nil {
+		log.Printf("[Saga] Failed to upsert saga step: %v", stepErr)
+	}
 
 	// Final status
 	if err := o.sagaRepo.UpdateSagaStatus(ctx, saga.ID, saga.Version, models.SagaStatusCompleted, models.StepIndexing, ""); err != nil {
@@ -167,6 +179,9 @@ func (o *Orchestrator) GetDocumentStatus(ctx context.Context, hash []byte) (*mod
 	doc, err := o.docRepo.GetDocumentByHash(ctx, hash)
 	if err != nil {
 		return nil, err
+	}
+	if doc == nil {
+		return nil, database.ErrNotFound
 	}
 	return o.sagaRepo.GetLatestSagaByDocumentID(ctx, doc.ID)
 }

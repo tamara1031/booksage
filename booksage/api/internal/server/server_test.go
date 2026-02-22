@@ -196,3 +196,78 @@ func (m *mockEmbeddingClient) GenerateEmbeddings(ctx context.Context, in *pb.Emb
 		Results: []*pb.EmbeddingResult{},
 	}, nil
 }
+
+func TestHandleIngestStatusByHash_MissingHash(t *testing.T) {
+	s := createTestServer()
+	ts := httptest.NewServer(s.RegisterRoutes())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/ingest/status")
+	if err != nil {
+		t.Fatalf("req failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing hash, got %d", resp.StatusCode)
+	}
+}
+
+func TestHandleIngestStatusByHash_InvalidHash(t *testing.T) {
+	s := createTestServer()
+	ts := httptest.NewServer(s.RegisterRoutes())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/ingest/status?hash=not-hex")
+	if err != nil {
+		t.Fatalf("req failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid hex hash, got %d", resp.StatusCode)
+	}
+}
+
+func TestHandleIngestStatusByHash_NotFound(t *testing.T) {
+	s := createTestServer()
+	ts := httptest.NewServer(s.RegisterRoutes())
+	defer ts.Close()
+
+	// Use a hash that mock returns nil for (not 0xF1 prefix)
+	resp, err := http.Get(ts.URL + "/api/v1/ingest/status?hash=aabb")
+	if err != nil {
+		t.Fatalf("req failed: %v", err)
+	}
+	// Mock returns nil doc, which causes ErrNotFound in GetDocumentStatus
+	// Response should be 404 or 500 depending on error handling
+	if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected 404 or 500 for unknown hash, got %d", resp.StatusCode)
+	}
+}
+
+func TestHandleDocumentExist(t *testing.T) {
+	s := createTestServer()
+	ts := httptest.NewServer(s.RegisterRoutes())
+	defer ts.Close()
+
+	req, _ := http.NewRequest("HEAD", ts.URL+"/api/v1/documents/123", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("req failed: %v", err)
+	}
+	// Returns 501 Not Implemented currently
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Errorf("expected 501, got %d", resp.StatusCode)
+	}
+}
+
+func TestHandleDocumentStatus_NotFound(t *testing.T) {
+	s := createTestServer()
+	ts := httptest.NewServer(s.RegisterRoutes())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/documents/not-found/status")
+	if err != nil {
+		t.Fatalf("req failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 for not-found, got %d", resp.StatusCode)
+	}
+}
