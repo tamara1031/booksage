@@ -1,93 +1,93 @@
-# BookSage 開発ロードマップ & 技術設計整理
+# BookSage Development Roadmap & Technical Sync
 
 ---
 
-## 1. 開発フェーズとロードマップ
+## 1. Development Phases & Roadmap
 
-### 現状アセスメント（As-Is）
+### Current Assessment (As-Is)
 
-実コードを精査した結果、以下の **実装済み / Mock** 状態を確認した。
+Based on a thorough review of the actual codebase, the following **Implemented / Mock** statuses have been confirmed.
 
-| レイヤー | 実装済み ✅ | Mock/Stub 🟡 |
+| Layer | Implemented ✅ | Mock/Stub 🟡 |
 |---|---|---|
 | Infra & CI | Docker Compose, CI (lint/test), Makefile | — |
-| gRPC通信 | Proto定義, Client Streaming (Parse), Unary (Embedding) | — |
-| Go API | Server (REST+SSE+Middleware), Config, Embedding Batcher, LLM Router, Ingest Saga, Fusion Retriever (Dense+Graph), Agent/Generator (CoR+Self-RAG), Circuit Breaker, Graceful Shutdown | RAPTOR Engine, ColBERT Engine |
+| gRPC Communication | Proto Definitions, Client Streaming (Parse), Unary (Embedding) | — |
+| Go API | Server (REST+SSE +Middleware), Config, Embedding Batcher, LLM Router, Ingest Saga, Fusion Retriever (Dense+Graph), Agent/Generator (CoR+Self-RAG), Circuit Breaker, Graceful Shutdown | RAPTOR Engine, ColBERT Engine |
 | Go DB Client | Qdrant Client (Search+Insert+Delete+PayloadIndex), Neo4j Client (Insert+Search+Delete) | — |
 | Python Worker | gRPC Servicer, DocumentParser (Docling/PyMuPDF), EmbeddingGenerator | SelfRAGCritique, ColBERT, RAPTOR |
 | DB Schema | Qdrant Collection (dense), Neo4j (Document→Chunk graph) | ColBERT/RAPTOR Collections |
 
 ---
 
-### Phase 1: End-to-End Ingest MVP （基盤確立）
+### Phase 1: End-to-End Ingest MVP (Foundational)
 
-> **目標**: ドキュメント1冊を投入し、Qdrant/Neo4jに正しくデータが格納される。
+> **Goal**: Ingest a single document and verify that data is correctly stored in Qdrant/Neo4j.
 
-| タスク | コンポーネント | Status |
+| Task | Component | Status |
 |---|---|---|
-| Worker: Doclingパース結果をChunkに分割 → gRPC Response | Python | ✅ |
-| Go: gRPC Parse応答からChunk/Nodeを正しく構築 | Go | ✅ |
-| Go: Real Qdrant Client でベクトル挿入 (deterministic ID + PayloadIndex) | Go | ✅ |
-| Go: Real Neo4j Client でノード/エッジ挿入 (Document→Chunk graph) | Go | ✅ |
-| E2E Test: PDF投入→DB確認の自動テスト | Both | 🟡 |
+| Worker: Split Docling parse results into Chunks → gRPC Response | Python | ✅ |
+| Go: Correctly construct Chunks/Nodes from gRPC Parse response | Go | ✅ |
+| Go: Real Qdrant Client vector insertion (deterministic ID + PayloadIndex) | Go | ✅ |
+| Go: Real Neo4j Client node/edge insertion (Document→Chunk graph) | Go | ✅ |
+| E2E Test: Automated test for PDF ingest → DB verification | Both | 🟡 |
 
-**完了基準**: `make up-build` → PDF アップロード → Qdrant/Neo4j にデータが格納される。
+**Completion Criteria**: `make up-build` → Upload PDF → Data verified in Qdrant/Neo4j.
 
 ---
 
-### Phase 2: Single-Engine Retrieval + 基本Q&A
+### Phase 2: Single-Engine Retrieval + Basic Q&A
 
-> **目標**: 1つのベクトルDBエンジンで質問に回答できる。
+> **Goal**: Answer questions using a single vector search engine.
 
-| タスク | コンポーネント | Status |
+| Task | Component | Status |
 |---|---|---|
-| Go Fusion: Qdrant Dense Search を実接続 | Go | ✅ |
-| Worker: Query用 Embedding 生成 | Python | ✅ |
-| Go Agent: LLM に Context + Query を渡して回答生成 (RAG Prompt) | Go | ✅ |
-| Server: SSE Streaming でリアルタイム回答返却 | Go | ✅ |
-| Neo4j Cypher Query 実装 (Graph Search / CONTAINS) | Go | ✅ |
+| Go Fusion: Connect Qdrant Dense Search | Go | ✅ |
+| Worker: Query Embedding generation | Python | ✅ |
+| Go Agent: Pass Context + Query to LLM for answer generation (RAG Prompt) | Go | ✅ |
+| Server: Return real-time answers via SSE Streaming | Go | ✅ |
+| Neo4j Cypher Query implementation (Graph Search / CONTAINS) | Go | ✅ |
 
-**完了基準**: `/api/v1/query` に質問 → Qdrant検索 → LLM生成 → SSE回答。
+**Completion Criteria**: Query `/api/v1/query` → Qdrant search → LLM generation → SSE response.
 
 ---
 
 ### Phase 3: Multi-Engine Fusion + Self-RAG
 
-> **目標**: 3エンジン並列検索 + Intent Fusion + Self-RAG評価ループ。
+> **Goal**: 3-engine parallel search + Intent Fusion + Self-RAG evaluation loop.
 
-| タスク | コンポーネント | Status |
+| Task | Component | Status |
 |---|---|---|
-| Go Fusion: 3エンジン(Graph/RAPTOR/ColBERT)の実接続 | Go | ✅ |
-| Python: ColBERT Late Interaction 実装 | Python | ✅ |
-| Python: RAPTOR Tree 構築 + 検索 | Python | ✅ |
+| Go Fusion: Parallel connection of 3 engines (Graph/RAPTOR/ColBERT) | Go | ✅ |
+| Python: ColBERT Late Interaction implementation | Python | ✅ |
+| Python: RAPTOR Tree construction + Search | Python | ✅ |
 | Go Agent: Self-RAG (Retrieval Critique → Generation Critique) | Go | ✅ |
-| Go Agent: Dual-level Retrieval (具体と抽象の抽出) | Go | ✅ |
+| Go Agent: Dual-level Retrieval (Specific & Abstract Extraction) | Go | ✅ |
 | Intent-Driven Dynamic Fusion (Operator Pattern + Skyline Ranker) | Go | ✅ |
 
-**完了基準**: 複合質問 → 意図分類 → 重み付きFusion → 自己評価 → 高品質回答。
+**Completion Criteria**: Complex query → Intent classification → Weighted Fusion → Self-evaluation → High-quality answer.
 
 ---
 
-### Phase 4: 本番対応 + スケーリング
+### Phase 4: Production Readiness & Scaling
 
-> **目標**: 可観測性、耐障害性、パフォーマンス最適化。
+> **Goal**: Observability, fault tolerance, and performance optimization.
 
-| タスク | コンポーネント | Status |
+| Task | Component | Status |
 |---|---|---|
 | Request ID Middleware + Structured Logging + Recovery | Go | ✅ |
 | Circuit Breaker (Closed/Open/HalfOpen) | Go | ✅ |
 | Health/Readiness Probes (/healthz, /readyz) | Go | ✅ |
 | Graceful Shutdown (SIGTERM/SIGINT) | Go | ✅ |
-| OpenTelemetry トレーシング (correlation_id 伝搬) | Both | 🟡 |
-| GPU メモリ管理 & モデル Warm-up | Python | 🟡 |
-| Kubernetes マニフェスト (HPA, Resource Limits) | Infra | 🟡 |
-| BookScout OPDS Scraper → Ingest API 連携 | Go | 🟡 |
+| OpenTelemetry Tracing (correlation_id propagation) | Both | 🟡 |
+| GPU Memory Management & Model Warm-up | Python | 🟡 |
+| Kubernetes Manifests (HPA, Resource Limits) | Infra | 🟡 |
+| BookScout OPDS Scraper → Ingest API Integration | Go | 🟡 |
 
 ---
 
-## 2. gRPC インターフェース設計の整理
+## 2. gRPC Interface Design
 
-### 現行Proto定義 (実装済み)
+### Current Proto Definition (Implemented)
 
 ```mermaid
 graph LR
@@ -102,27 +102,27 @@ graph LR
     A -->|"GenerateEmbeddings(unary)"| C
 ```
 
-| RPC | 方向 | ストリーミング | 用途 |
+| RPC | Direction | Streaming | Purpose |
 |---|---|---|---|
-| `Parse(stream ParseRequest) → ParseResponse` | Go→Python | **Client Streaming** | PDF/EPUBバイナリ転送 (4MB制限回避) |
-| `GenerateEmbeddings(EmbeddingRequest) → EmbeddingResponse` | Go→Python | Unary | テキスト→ベクトル変換 |
+| `Parse(stream ParseRequest) → ParseResponse` | Go→Python | **Client Streaming** | PDF/EPUB binary transfer (Bypass 4MB limit) |
+| `GenerateEmbeddings(EmbeddingRequest) → EmbeddingResponse` | Go→Python | Unary | Text-to-Vector conversion |
 
-### 追加検討が必要なRPC
+### Proposed RPC Enhancements
 
-| 候補RPC | ストリーミング | 根拠 |
+| Candidate RPC | Streaming | Rationale |
 |---|---|---|
-| `AgenticGenerate(QueryRequest) → stream AgenticEvent` | **Server Streaming** | SSE応答のTTFT短縮。推論トレース・ソース・回答をチャンク送信 |
-| `RetrieveFromWorker(RetrievalRequest) → RetrievalResponse` | Unary | Worker側でColBERT Late Interactionを実行する場合 |
-| `HealthCheck(Empty) → HealthResponse` | Unary | Worker liveness / readiness probe |
+| `AgenticGenerate(QueryRequest) → stream AgenticEvent` | **Server Streaming** | Reduce TTFT for SSE responses. Stream reasoning traces, sources, and answer chunks. |
+| `RetrieveFromWorker(RetrievalRequest) → RetrievalResponse` | Unary | If ColBERT Late Interaction is executed on the Worker side. |
+| `HealthCheck(Empty) → HealthResponse` | Unary | Worker liveness / readiness probe. |
 
 > [!IMPORTANT]
-> **Server Streaming for Agentic**: Phase 2で`/api/v1/query`のSSE実装時に、Go→Frontend は HTTP SSE、Go→Python は gRPC Server Streaming の**二段構え**が必要。
+> **Server Streaming for Agentic**: When implementing Phase 2's `/api/v1/query` SSE, a **two-tier** approach is required: Go→Frontend via HTTP SSE, and Go→Python via gRPC Server Streaming.
 
 ---
 
-## 3. 主要データパイプラインのフロー整理
+## 3. Core Data Pipeline Flows
 
-### 3.1 インジェストパイプライン
+### 3.1 Ingestion Pipeline
 
 ```mermaid
 sequenceDiagram
@@ -134,14 +134,14 @@ sequenceDiagram
     participant SQLite
 
     User->>API: POST /api/v1/ingest (multipart)
-    API->>API: SHA256ハッシュ計算 → 重複チェック
+    API->>API: SHA256 Calculation → Duplicate Check
     API->>SQLite: CreateDocument + CreateSaga(Pending)
 
     rect rgb(40, 40, 80)
     Note over API,Worker: gRPC Client Streaming
     API->>Worker: ParseRequest{metadata} (1st msg)
     API->>Worker: ParseRequest{chunk_data} (2nd~N msg)
-    Worker->>Worker: Docling/PyMuPDF でETL
+    Worker->>Worker: ETL via Docling/PyMuPDF
     Worker->>Worker: Layout-aware Chunking
     Worker-->>API: ParseResponse{documents[], metadata}
     end
@@ -163,11 +163,11 @@ sequenceDiagram
     API-->>User: 202 {document_id, status: processing}
 ```
 
-**補償ロジック (実装済み)**: Neo4j挿入失敗時 → Qdrant DeleteDocument → Saga Failed。
+**Compensation Logic (Implemented)**: If Neo4j insertion fails → Qdrant DeleteDocument → Saga Failed.
 
 ---
 
-### 3.2 検索・生成パイプライン（目標状態）
+### 3.2 Retrieval & Generation Pipeline (Target State)
 
 ```mermaid
 sequenceDiagram
@@ -181,8 +181,8 @@ sequenceDiagram
     User->>API: POST /api/v1/query {query}
 
     rect rgb(60, 40, 40)
-    Note over API: Chain-of-Retrieval (CoR)
-    API->>LLM: RouteLLMTask("simple_keyword_extraction")
+    Note over API: Dual-level Retrieval
+    API->>LLM: RouteLLMTask("keyword_extraction")
     LLM-->>API: Sub-queries / Keywords
     end
 
@@ -200,7 +200,7 @@ sequenceDiagram
     Qdrant-->>API: ColBERT results
     end
 
-    API->>API: Intent分類 → 重み付きRRF Fusion
+    API->>API: Intent Classification → Skyline Ranker (Pareto)
 
     rect rgb(40, 60, 40)
     Note over API: Self-RAG Loop
@@ -217,19 +217,19 @@ sequenceDiagram
 
 ---
 
-## 4. データベースとインデックスの責務分界
+## 4. Database & Index Responsibilities
 
-### Qdrant (ベクトルDB)
+### Qdrant (Vector DB)
 
-| Collection | 用途 | ベクトル型 | Payload |
+| Collection | Purpose | Vector Type | Payload |
 |---|---|---|---|
 | `booksage_dense` | Dense Semantic Search | `Float32[768]` | `doc_id`, `chunk_id`, `text`, `page_number` |
 | `booksage_colbert` | ColBERT Late Interaction | `MultiVector[seq_len × 128]` | `doc_id`, `chunk_id`, `text` |
 | `booksage_raptor` | RAPTOR Summary Tree | `Float32[768]` | `doc_id`, `level` (leaf/branch/root), `summary_text` |
 
-**フィルタリング戦略**: 全Collectionで `doc_id` をPayload Indexに設定。検索時に `must` フィルタで特定ドキュメントにスコープ可能。
+**Filtering Strategy**: `doc_id` is set as a Payload Index across all collections. All searches use a `must` filter to scope requests to specific documents when necessary.
 
-### Neo4j (グラフDB)
+### Neo4j (Graph DB)
 
 ```
 (:Document {doc_id, title, author})
@@ -245,26 +245,26 @@ sequenceDiagram
 (:Chunk)-[:NEXT_CHUNK]->(:Chunk)
 ```
 
-| ノード | 責務 | 主要プロパティ |
+| Node | Responsibility | Major Properties |
 |---|---|---|
-| Document | 書籍メタデータ | `doc_id`, `title`, `author` |
-| Chapter | 目次構造 (Two-Level Index) | `chapter_number`, `title` |
-| Chunk | テキスト断片 | `chunk_id`, `text`, `page_number` |
-| Entity | NER抽出エンティティ | `name`, `type` |
+| Document | Book Metadata | `doc_id`, `title`, `author` |
+| Chapter | TOC Structure (Two-Level Index) | `chapter_number`, `title` |
+| Chunk | Text Fragment | `chunk_id`, `text`, `page_number` |
+| Entity | NER Extracted Entities | `name`, `type` |
 
-**紐付け**: `chunk_id` を共通キーとしてQdrantのPayloadとNeo4jのChunkノードを結合。
+**Linking**: The `chunk_id` serves as the common key to join Qdrant payloads with Neo4j Chunk nodes.
 
 ---
 
-## 5. 潜在的な技術的リスクと対策
+## 5. Potential Technical Risks & Mitigations
 
-| # | リスク | 影響 | 対策 |
+| # | Risk | Impact | Mitigation |
 |---|---|---|---|
-| 1 | **大規模PDFでのgRPCメモリスパイク** | Worker OOM Kill | Client Streamingのチャンクサイズを `256KB` に制限。Worker側で `tempfile` に書き出してからパース (✅実装済み) |
-| 2 | **gRPCタイムアウト** (Docling ETLが数分) | Parse RPC失敗 | `ParserTimeout` を十分に設定 (現在60s)。Phase4で進捗通知用のBidirectional Streamingを検討 |
-| 3 | **Embedding Batchの4MB制限超過** | gRPC Resource Exhausted | Batcher (✅実装済み, batch=100) でチャンクごとに分割送信 |
-| 4 | **GPU CUDA Context破損** | Worker freeze/crash | `ProcessPoolExecutor` をCPUタスクのみに使用、GPU は `ThreadPoolExecutor` (✅設計済み) |
-| 5 | **Qdrant/Neo4j データ不整合** | 片方にしかデータがない | Saga補償パターン (✅実装済み): Neo4j失敗時にQdrant Rollback |
-| 6 | **Fusion Retrieval レイテンシ** | 3エンジン最遅に引きずられる | `errgroup` + `context.WithTimeout(3s)` + Fail-soft (✅設計済み): 1エンジン失敗でも縮退運転 |
-| 7 | **ColBERT Multi-Vector のQdrantストレージコスト** | ストレージ爆発 | Qdrant の`Quantization` (Binary/Scalar) を有効化。Chunk数が多い書籍はRAPTORで要約圧縮 |
-| 8 | **LLMルーティングのコスト超過** | Gemini API課金 | `UseLocalOnlyLLM` フラグ (✅実装済み) でオフライン運用可能。Routerでタスク種別ごとに厳格に分離 |
+| 1 | **gRPC Memory Spikes on Large PDFs** | Worker OOM Kill | Client Streaming chunk size restricted to `256KB` に制限。Worker側で `tempfile` に書き出してからパース (✅ implemented) |
+| 2 | **gRPC Timeouts** (Docling ETL can take minutes) | Parse RPC Failure | Sufficiently large `ParserTimeout` (currently 60s). Consider Bi-directional Streaming for progress updates in Phase 4. |
+| 3 | **Embedding Batch Exceeding 4MB** | gRPC Resource Exhausted | Batcher (✅ implemented, batch=100) splits messages into safe sizes. |
+| 4 | **GPU CUDA Context Corruption** | Worker Freeze/Crash | `ProcessPoolExecutor` used for CPU tasks, `ThreadPoolExecutor` for GPU (✅ Designed). |
+| 5 | **Qdrant/Neo4j Data Inconsistency** | Mismatched Index States | Saga Compensation Pattern (✅ implemented): Qdrant Rollback on Neo4j failure. |
+| 6 | **Fusion Retrieval Latency** | Blocked by slowest engine | `errgroup` + `context.WithTimeout(3s)` + Fail-soft (✅ Designed): Graceful degradation if one engine fails. |
+| 7 | **ColBERT Storage Explosion** | Resource Exhaustion | Enabled Qdrant `Quantization` (Binary/Scalar). Use RAPTOR for summary compression of long documents. |
+| 8 | **Cost Overruns on Cloud LLM** | Excessive Gemini Billing | `UseLocalOnlyLLM` flag (✅ implemented): Use Ollama by default except for complex tasks. |

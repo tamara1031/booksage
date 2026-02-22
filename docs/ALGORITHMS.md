@@ -1,12 +1,12 @@
-# BookSage 推論アルゴリズム視覚化ドキュメント
+# BookSage Inference Algorithm Visualization
 
-本ドキュメントでは、Agentic RAGシステム「BookSage」における推論アルゴリズムのフローを解説します。
-システムは **Go API Orchestrator** を中心とした設計となっており、全てのLLM推論（生成、Embedding）はGoサービスが管理します。Python Workerはドキュメントの構造解析のみを担当し、推論処理は行いません。
+This document explains the inference algorithm flow in "BookSage," an Agentic RAG system.
+The system is architected around the **Go API Orchestrator**. All LLM inference (generation, embedding) is managed by the Go service. The Python Worker is specialized purely for structural document analysis (ETL) and does not perform inference.
 
-## 1. Ingest（取り込み）時の推論アルゴリズム
+## 1. Ingestion Pipeline Algorithms
 
-ドキュメントのアップロードから、ベクトルストア（Qdrant）およびグラフデータベース（Neo4j）への保存までのフローです。
-階層的な要約生成（RAPTOR）とエンティティ抽出（GraphRAG）を組み合わせ、多角的なインデックスを構築します。
+This flow covers the process from document upload to storage in the Vector Store (Qdrant) and Graph Database (Neo4j).
+It builds a multi-dimensional index by combining hierarchical summary generation (RAPTOR) and entity extraction (GraphRAG).
 
 ```mermaid
 sequenceDiagram
@@ -17,20 +17,20 @@ sequenceDiagram
     participant Vec as Qdrant (Vector)
     participant Graph as Neo4j (Graph)
 
-    Client->>Go: ドキュメントアップロード (PDF/Markdown等)
+    Client->>Go: Upload Document (PDF/Markdown/etc.)
     activate Go
 
-    %% 解析フェーズ
-    Note right of Go: [解析] 構造化データ抽出
+    %% Analysis Phase
+    Note right of Go: [Analysis] Structural Data Extraction
     Go->>Py: Parse Request (Docling)
     activate Py
-    Py-->>Go: 階層ツリー構造 & チャンク返却
+    Py-->>Go: Hierarchical Tree & Chunks
     deactivate Py
 
-    %% 要約推論フェーズ (RAPTOR)
+    %% Summary Inference Phase (RAPTOR)
     rect rgb(240, 248, 255)
-        Note right of Go: [要約推論 - RAPTOR]<br/>再帰的要約生成
-        loop 下位チャンクから上位セクションへ
+        Note right of Go: [Summary Inference - RAPTOR]<br/>Recursive Summarization
+        loop From leaf chunks to root sections
             Go->>LLM: Summarize Request
             activate LLM
             LLM-->>Go: Summary Text
@@ -38,62 +38,62 @@ sequenceDiagram
         end
     end
 
-    %% 抽出推論フェーズ (GraphRAG)
+    %% Extraction Inference Phase (GraphRAG)
     rect rgb(255, 240, 245)
-        Note right of Go: [抽出推論 - GraphRAG]<br/>エンティティ・関係性抽出
+        Note right of Go: [Extraction Inference - GraphRAG]<br/>Entities & Relationships
         Go->>LLM: Extract Entities & Relations
         activate LLM
         LLM-->>Go: Entities JSON
         deactivate LLM
     end
 
-    %% ベクトル化フェーズ
+    %% Vectorization Phase
     rect rgb(240, 255, 240)
-        Note right of Go: [ベクトル推論]<br/>Embedding生成
+        Note right of Go: [Vector Inference]<br/>Embedding Generation
         Go->>LLM: Generate Embeddings (Chunks & Entities)
         activate LLM
         LLM-->>Go: Vectors
         deactivate LLM
     end
 
-    %% 保存フェーズ
-    Note right of Go: [名寄せと保存]
-    Go->>Vec: コサイン類似度による名寄せ判定
-    Go->>Vec: ベクトル保存 (Upsert)
-    Go->>Graph: インクリメンタル保存 (GT-Link: TreeノードとEntityの結合)
+    %% Persistence Phase
+    Note right of Go: [Linking & Persistence]
+    Go->>Vec: Entity Linking via Cosine Similarity
+    Go->>Vec: Vector Upsert
+    Go->>Graph: Incremental Persistence (GT-Link: Tree & Entity Binding)
 
-    Go-->>Client: Ingest完了通知
+    Go-->>Client: Ingestion Complete
     deactivate Go
 ```
 
-### アルゴリズム詳細
+### Algorithm Details
 
-1.  **[解析] Python WorkerによるDoclingパース**
-    -   Go OrchestratorからPython Workerへドキュメントデータを送信します。
-    -   Python Workerは `Docling` 等のライブラリを用いてドキュメントを解析し、章・節・項の階層構造（Tree）と、最小単位のテキストチャンクを抽出してGoへ返却します。
-    -   *制約事項*: Python WorkerはLLMを一切呼び出しません。
+1.  **[Analysis] Structural Parsing via Python Worker**
+    -   The Go Orchestrator sends document data to the Python Worker.
+    -   The Python Worker uses specialized libraries like `Docling` to parse the document, extracting the chapter/section hierarchy (Tree) and micro-text chunks.
+    -   *Constraint*: The Python Worker does not invoke LLMs.
 
-2.  **[要約推論 - RAPTOR] 再帰的要約**
-    -   Go Orchestratorは抽出されたチャンクを受け取り、Ollamaを呼び出します。
-    -   **RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval)** アルゴリズムに基づき、下位のチャンク群を要約して上位のノード（セクション要約）を生成します。これをルートノードまで再帰的に繰り返すことで、ドキュメントの全体像を捉えたコンテキストを生成します。
+2.  **[Summary Inference - RAPTOR] Recursive Summarization**
+    -   The Go Orchestrator receives extracted chunks and invokes Ollama.
+    -   Based on the **RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval)** algorithm, it summarizes groups of child chunks to generate parent nodes (Section Summaries). This is repeated recursively up to the root, capturing global context.
 
-3.  **[抽出推論 - GraphRAG] エンティティと関係性の抽出**
-    -   Go Orchestratorは各チャンクに対してOllamaを呼び出し、テキスト内に含まれる重要な「エンティティ（人物、場所、概念など）」と、それらの間の「関係性」を抽出します。
-    -   これにより、キーワード検索だけでは捉えきれない意味的なつながりをグラフデータとして構築します。
+3.  **[Extraction Inference - GraphRAG] Entity & Relationship Extraction**
+    -   The Go Orchestrator invokes Ollama for each chunk to extract critical "Entities" (People, Places, Concepts) and their "Relationships."
+    -   This constructs a knowledge graph representing semantic connections that traditional keyword search might miss.
 
-4.  **[ベクトル推論] Embedding生成**
-    -   抽出されたテキストチャンク、生成された要約、および抽出されたエンティティに対して、Go OrchestratorがOllama（Embeddingモデル）を呼び出し、ベクトル表現を生成します。
+4.  **[Vector Inference] Embedding Generation**
+    -   The Go Orchestrator calls Ollama (Embedding models) to generate vector representations for text chunks, summaries, and extracted entities.
 
-5.  **[名寄せと保存] Qdrant & Neo4jへの保存**
-    -   **Qdrant**: 生成されたベクトルを用い、既存データとのコサイン類似度を計算して名寄せ（重複排除）を行った上で保存します。
-    -   **Neo4j**: ドキュメントの階層構造（Treeノード）と抽出されたエンティティを保存します。この際、**GT-Link (Graph-Tree Link)** アルゴリズムにより、構造ツリーと意味グラフを相互に結合し、横断的な検索を可能にします。
+5.  **[Linking & Persistence] Qdrant & Neo4j Storage**
+    -   **Qdrant**: Stores vectors. It uses cosine similarity to perform entity linking (deduplication) before upserting.
+    -   **Neo4j**: Stores the document hierarchy (Tree nodes) and extracted entities. The **GT-Link (Graph-Tree Link)** algorithm interlinks the structural tree and the semantic graph, enabling cross-modal retrieval.
 
 ---
 
-## 2. Inference（検索・生成）時の推論アルゴリズム
+## 2. Query & Generation Pipeline Algorithms
 
-ユーザーからのクエリを受け取り、最適な回答を生成するまでのフローです。
-適応的なルーティング、多角的な検索、および自己評価ループを備えています。
+This flow covers the process from receiving a user query to generating an optimal response.
+It features adaptive routing, multi-engine retrieval, and a self-evaluation loop.
 
 ```mermaid
 sequenceDiagram
@@ -103,83 +103,83 @@ sequenceDiagram
     participant Vec as Qdrant (Vector)
     participant Graph as Neo4j (Graph)
 
-    Client->>Go: ユーザー検索クエリ
+    Client->>Go: User Search Query
     activate Go
 
-    %% ルーティング
+    %% Routing
     rect rgb(255, 250, 205)
-        Note right of Go: [ルーティング推論]<br/>Adaptive Routing
-        Go->>LLM: クエリ複雑度判定
+        Note right of Go: [Routing Inference]<br/>Adaptive Routing
+        Go->>LLM: Query Complexity Analysis
         activate LLM
         LLM-->>Go: Simple / Complex / Agentic
         deactivate LLM
     end
 
-    %% キーワード抽出
+    %% Keyword Extraction
     rect rgb(230, 230, 250)
-        Note right of Go: [キーワード抽出推論 - LightRAG]<br/>Dual-level Retrieval
+        Note right of Go: [Keyword Extraction - LightRAG]<br/>Dual-level Retrieval
         Go->>LLM: Extract Low/High-level Keys
         activate LLM
         LLM-->>Go: Specific Entities & Broad Themes
         deactivate LLM
     end
 
-    %% 並行探索
+    %% Parallel Search
     par Parallel Search
-        Go->>Vec: ベクトル検索 (Dense Retrieval)
+        Go->>Vec: Dense Retrieval (Vector Search)
         and
-        Go->>Graph: グラフ探索 (Cypher Query)
+        Go->>Graph: Graph Traversal (Cypher Query)
     end
-    Vec-->>Go: 類似チャンク
-    Graph-->>Go: 関連エンティティ・関係性
+    Vec-->>Go: Similar Chunks
+    Graph-->>Go: Related Entities & Relations
 
-    %% ランク付け
-    Note right of Go: [アルゴリズム評価 - Skyline Ranker]<br/>パレート最適 (Vectorスコア vs Graphスコア)
-    Go->>Go: コンテキストの厳選・フィルタリング
+    %% Ranking
+    Note right of Go: [Algorithmic Evaluation - Skyline Ranker]<br/>Pareto Optimality (Vector vs Graph)
+    Go->>Go: Context Selection & Noise Pruning
 
-    %% 生成と自己評価
+    %% Generation and Self-Correction
     rect rgb(255, 228, 225)
         loop Self-RAG Loop
-            Note right of Go: [生成と自己評価推論 - Self-RAG]
-            Go->>LLM: 回答生成 (with Context)
+            Note right of Go: [Generation & Critique - Self-RAG]
+            Go->>LLM: Generate Answer (with Context)
             activate LLM
-            LLM-->>Go: 回答ドラフト
+            LLM-->>Go: Answer Draft
             deactivate LLM
 
-            Go->>LLM: 自己評価 (Critique / Fact Check)
+            Go->>LLM: Self-Critique (Faithfulness & Relevance)
             activate LLM
-            LLM-->>Go: Score / Pass / Fail
+            LLM-->>Go: Evaluation Score (Pass/Fail)
             deactivate LLM
 
-            alt 基準未達 (Fail)
-                Go->>Go: クエリ/コンテキスト修正してリトライ
-            else 基準達成 (Pass)
-                Go-->>Client: 最終回答
+            alt Failed Evaluation
+                Go->>Go: Refine Query/Context & Retry
+            else Passed Evaluation
+                Go-->>Client: Final Answer
             end
         end
     end
     deactivate Go
 ```
 
-### アルゴリズム詳細
+### Algorithm Details
 
-1.  **[ルーティング推論] Adaptive Routing**
-    -   Go Orchestratorはユーザーのクエリを受け取ると、まずOllamaを呼び出してクエリの性質を分析します。
-    -   クエリが単純な事実確認か、複雑な推論を要するか、あるいはマルチステップの処理が必要か（Agentic）を判定し、後続の処理パイプラインを動的に切り替えます。
+1.  **[Routing Inference] Adaptive Routing**
+    -   Upon receiving a query, the Go Orchestrator invokes Ollama to analyze its nature.
+    -   It classifies the query as a simple fact-check, a complex multi-part reasoning task, or an "Agentic" task requiring multiple steps, dynamically switching the downstream pipeline.
 
-2.  **[キーワード抽出推論 - LightRAG] Dual-level Retrieval**
-    -   Go OrchestratorはOllamaを呼び出し、クエリから検索用のキーワードを抽出します。
-    -   **LightRAG** のアプローチを採用し、「Low-level keys（具体的なエンティティ名など）」と「High-level keys（抽象的なテーマや概念）」を同時に抽出することで、局所的な情報と大局的な文脈の両方を検索対象とします。
+2.  **[Keyword Extraction - LightRAG] Dual-level Retrieval**
+    -   The Go Orchestrator calls Ollama to extract search keys.
+    -   Following the **LightRAG** philosophy, it extracts "Low-level keys" (specific entity names) and "High-level keys" (abstract themes/concepts) simultaneously to capture both microscopic details and macroscopic context.
 
-3.  **[並行探索] Vector & Graph Parallel Search**
-    -   抽出されたキーワードを用い、Goの `Goroutines` を使用してQdrant（ベクトル検索）とNeo4j（グラフ探索）を並行して検索します。
-    -   これにより、意味的な類似性と構造的な関連性の両面から候補となるコンテキストを収集します。
+3.  **[Parallel Search] Vector & Graph Parallel Search**
+    -   Using Go's `Goroutines`, the system performs parallel searches across Qdrant (dense vector search) and Neo4j (graph traversal).
+    -   This ensures context is gathered from both semantic similarity and structural relationship vantage points.
 
-4.  **[アルゴリズム評価] Skyline Ranker**
-    -   収集された膨大なコンテキスト候補に対し、Go内部のロジックでフィルタリングを行います。
-    -   **Skyline Ranker** アルゴリズムを適用し、「ベクトル類似度スコア」と「グラフ関連度スコア」の2軸で評価します。パレート最適（どちらのスコアも他の候補より劣っていない解）なコンテキストのみを厳選し、LLMのコンテキストウィンドウを効率的に利用します。
+4.  **[Algorithmic Evaluation] Skyline Ranker**
+    -   The system filters the vast amount of candidate context using internal logic.
+    -   The **Skyline Ranker** algorithm evaluates candidates across two axes: "Vector Similarity Score" and "Graph Centrality Score." It selects the **Pareto-optimal** set (where no candidate is strictly outperformed by another in both dimensions), strictly pruning noise to optimize the LLM's context window.
 
-5.  **[生成と自己評価推論 - Self-RAG] Generation & Critique**
-    -   厳選されたコンテキストと共にOllamaへプロンプトを送信し、回答を生成します。
-    -   生成された回答に対し、即座にOllamaを用いて「自己評価（Critique）」を行います。回答が事実に基づいているか（Faithfulness）、クエリに答えているか（Relevance）を検証します。
-    -   基準を満たさない場合、Go Orchestratorは検索クエリを修正したりコンテキストを再選定したりして、回答生成をリトライします（Self-Correction Loop）。
+5.  **[Generation & Critique] Self-RAG Self-Correction Loop**
+    -   The selected context is sent to Ollama to generate a response.
+    -   The generated answer is immediately critiqued using Ollama for **Faithfulness** (is it grounded?) and **Relevance** (does it answer the query?).
+    -   If the criteria are not met, the Go Orchestrator refined the search query or re-selects context and retries the generation loop.
