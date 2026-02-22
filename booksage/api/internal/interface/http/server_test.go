@@ -191,10 +191,16 @@ func (m *mockParseClientStream) CloseAndRecv() (*pb.ParseResponse, error) {
 
 type mockEmbeddingClient struct{}
 
-func (m *mockEmbeddingClient) GenerateEmbeddings(ctx context.Context, in *pb.EmbeddingRequest, opts ...grpc.CallOption) (*pb.EmbeddingResponse, error) {
-	return &pb.EmbeddingResponse{
-		Results: []*pb.EmbeddingResult{},
-	}, nil
+func (m *mockEmbeddingClient) Embed(_ context.Context, texts []string) ([][]float32, error) {
+	embeddings := make([][]float32, len(texts))
+	for i := range texts {
+		embeddings[i] = []float32{0.1, 0.2, 0.3}
+	}
+	return embeddings, nil
+}
+
+func (m *mockEmbeddingClient) Name() string {
+	return "mock_embedding"
 }
 
 func TestHandleIngestStatusByHash_MissingHash(t *testing.T) {

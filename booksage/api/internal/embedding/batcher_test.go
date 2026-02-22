@@ -4,35 +4,26 @@ import (
 	"context"
 	"errors"
 	"testing"
-
-	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
-	"google.golang.org/grpc"
 )
 
 type mockEmbeddingClient struct {
 	err error
 }
 
-func (m *mockEmbeddingClient) GenerateEmbeddings(ctx context.Context, in *pb.EmbeddingRequest, opts ...grpc.CallOption) (*pb.EmbeddingResponse, error) {
+func (m *mockEmbeddingClient) Embed(_ context.Context, texts []string) ([][]float32, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 
-	results := make([]*pb.EmbeddingResult, len(in.Texts))
-	for i, text := range in.Texts {
-		results[i] = &pb.EmbeddingResult{
-			Vector: &pb.EmbeddingResult_Dense{
-				Dense: &pb.DenseVector{
-					Values: []float32{1.0, 2.0, float32(len(text))},
-				},
-			},
-		}
+	embeddings := make([][]float32, len(texts))
+	for i, text := range texts {
+		embeddings[i] = []float32{1.0, 2.0, float32(len(text))}
 	}
+	return embeddings, nil
+}
 
-	return &pb.EmbeddingResponse{
-		Results:     results,
-		TotalTokens: int32(len(in.Texts) * 2), // Mock token count
-	}, nil
+func (m *mockEmbeddingClient) Name() string {
+	return "mock_embedding"
 }
 
 func TestBatcher_Empty(t *testing.T) {
