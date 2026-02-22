@@ -99,7 +99,31 @@ func (o *SagaOrchestrator) RunIngestionSaga(ctx context.Context, saga *models.In
 	}
 	saga.Version++
 
-	// Step: Embedding/Vector Store (Simplified for now as existing code does chunks)
+	// Step 1: Embedding/Vector Store
+	if err := o.executeEmbeddingStep(ctx, saga, strID, chunks); err != nil {
+		return err
+	}
+
+	// Step 2: Indexing/Graph Store (GraphRAG + RAPTOR)
+	if err := o.executeIndexingStep(ctx, saga, strID, chunks, graphNodes); err != nil {
+		// Compensate Qdrant on failure
+		log.Printf("[Saga - Rollback] Neo4j insertion failed for saga %d. Compensating Qdrant...", saga.ID)
+		if compErr := o.vectorStore.DeleteDocument(ctx, strID); compErr != nil {
+			log.Printf("[Saga - CRITICAL ALERT] Compensation failed! docID: %s. Error: %v", strID, compErr)
+		}
+		return err
+	}
+
+	// Final status
+	if err := o.sagaRepo.UpdateSagaStatus(ctx, saga.ID, saga.Version, models.SagaStatusCompleted, models.StepIndexing, ""); err != nil {
+		return err
+	}
+
+	log.Printf("[Saga Orchestrator] Ingestion completed successfully for saga: %d", saga.ID)
+	return nil
+}
+
+func (o *SagaOrchestrator) executeEmbeddingStep(ctx context.Context, saga *models.IngestSaga, strID string, chunks []map[string]any) error {
 	step := &models.SagaStep{
 		SagaID: saga.ID,
 		Name:   models.StepEmbedding,
@@ -125,14 +149,16 @@ func (o *SagaOrchestrator) RunIngestionSaga(ctx context.Context, saga *models.In
 	if _, stepErr := o.sagaRepo.UpsertSagaStep(ctx, step); stepErr != nil {
 		log.Printf("[Saga] Failed to upsert saga step: %v", stepErr)
 	}
+	return nil
+}
 
-	// Step: Indexing/Graph Store (GraphRAG + RAPTOR)
-	step = &models.SagaStep{
+func (o *SagaOrchestrator) executeIndexingStep(ctx context.Context, saga *models.IngestSaga, strID string, chunks []map[string]any, graphNodes []map[string]any) error {
+	step := &models.SagaStep{
 		SagaID: saga.ID,
 		Name:   models.StepIndexing,
 		Status: models.SagaStatusProcessing,
 	}
-	stepID, _ = o.sagaRepo.UpsertSagaStep(ctx, step)
+	stepID, _ := o.sagaRepo.UpsertSagaStep(ctx, step)
 	step.ID = stepID
 
 	log.Printf("[Saga - Step Indexing] Building RAPTOR tree and extracting GraphRAG entities")
@@ -161,7 +187,6 @@ func (o *SagaOrchestrator) RunIngestionSaga(ctx context.Context, saga *models.In
 		if err != nil {
 			log.Printf("[Saga] Entity resolution error for '%s': %v", ent.Name, err)
 		}
-		// In a fuller implementation, we would use the returned ID to link or merge.
 	}
 
 	// 4. Build Graph Elements (Delegated to GraphBuilder)
@@ -173,9 +198,6 @@ func (o *SagaOrchestrator) RunIngestionSaga(ctx context.Context, saga *models.In
 
 	log.Printf("[Saga - Step Indexing] Inserting %d total graph elements into Neo4j", len(allGraphNodes))
 	if err := o.graphStore.InsertNodesAndEdges(ctx, strID, allGraphNodes, finalEdges); err != nil {
-		log.Printf("[Saga - Rollback] Neo4j insertion failed for saga %d. Compensating Qdrant...", saga.ID)
-
-		// Update state
 		if statusErr := o.sagaRepo.UpdateSagaStatus(ctx, saga.ID, saga.Version, models.SagaStatusFailed, models.StepIndexing, err.Error()); statusErr != nil {
 			log.Printf("[Saga] Failed to update saga status: %v", statusErr)
 		}
@@ -184,26 +206,13 @@ func (o *SagaOrchestrator) RunIngestionSaga(ctx context.Context, saga *models.In
 		if _, stepErr := o.sagaRepo.UpsertSagaStep(ctx, step); stepErr != nil {
 			log.Printf("[Saga] Failed to upsert saga step: %v", stepErr)
 		}
-
-		// Compensation: Rollback the Qdrant insertion
-		if compErr := o.vectorStore.DeleteDocument(ctx, strID); compErr != nil {
-			log.Printf("[Saga - CRITICAL ALERT] Compensation failed! docID: %s. Error: %v", strID, compErr)
-		}
-
-		return fmt.Errorf("neo4j insertion failed, transaction rolled back: %w", err)
+		return fmt.Errorf("neo4j insertion failed: %w", err)
 	}
 
 	step.Status = models.SagaStatusCompleted
 	if _, stepErr := o.sagaRepo.UpsertSagaStep(ctx, step); stepErr != nil {
 		log.Printf("[Saga] Failed to upsert saga step: %v", stepErr)
 	}
-
-	// Final status
-	if err := o.sagaRepo.UpdateSagaStatus(ctx, saga.ID, saga.Version, models.SagaStatusCompleted, models.StepIndexing, ""); err != nil {
-		return err
-	}
-
-	log.Printf("[Saga Orchestrator] Ingestion completed successfully for saga: %d", saga.ID)
 	return nil
 }
 
