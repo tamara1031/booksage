@@ -10,10 +10,11 @@ The high-performance gateway and orchestration engine for the BookSage RAG syste
 
 ### Key Responsibilities
 
-- **API Gateway**: Provides the primary interface (REST/gRPC) for user interactions.
-- **Agentic Loop (CoR & Self-RAG)**: Orchestrates the reasoning chain, decomposing queries and critiquing results.
-- **Fusion Retrieval**: Executes parallel queries across Neo4j (Graph) and Qdrant (Vector) using Go's `goroutines` and `errgroup`.
-- **LLM Router**: Intelligently dispatches tasks between local models (Ollama) and Cloud APIs (Gemini 1.5 Pro).
+- **API Gateway**: Provides the primary interface (REST/SSE) for user interactions, with middleware stack (Request ID, Structured Logging, Panic Recovery).
+- **Agentic Loop (CoR & Self-RAG)**: Orchestrates the reasoning chain — decomposes queries into sub-queries (CoR), critiques retrieval relevance, and validates factual grounding.
+- **Fusion Retrieval**: Executes parallel queries across Neo4j (Graph) and Qdrant (Vector) with **intent-driven dynamic fusion** and weighted Reciprocal Rank Fusion (RRF).
+- **LLM Router**: Intelligently dispatches tasks between local models (Ollama) and Cloud APIs (Gemini).
+- **Resilience**: Circuit Breaker pattern, graceful shutdown (SIGTERM/SIGINT), health (`/healthz`) and readiness (`/readyz`) probes.
 - **gRPC Client**: Manages communication with the Python ML Worker via **gRPC Client Streaming**.
 
 ### Setup & Development

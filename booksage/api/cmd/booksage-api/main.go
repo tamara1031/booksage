@@ -5,6 +5,10 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/booksage/booksage-api/internal/agent"
 	"github.com/booksage/booksage-api/internal/config"
@@ -116,11 +120,37 @@ func main() {
 	// ==========================================
 
 	apiServer := server.NewServer(generator, embedBatcher, parserClient, sagaOrchestrator)
-	mux := apiServer.RegisterRoutes()
+	handler := apiServer.RegisterRoutes()
 
-	// Start server on port 8080
-	log.Println("[System] 🌐 Starting REST API Server on :8080")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
-		log.Fatalf("[Error] HTTP server failed: %v", err)
+	// ==========================================
+	// Graceful Shutdown
+	// ==========================================
+
+	httpServer := &http.Server{
+		Addr:    ":8080",
+		Handler: handler,
 	}
+
+	// Listen for shutdown signals
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+
+	go func() {
+		log.Println("[System] 🌐 Starting REST API Server on :8080")
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("[Error] HTTP server failed: %v", err)
+		}
+	}()
+
+	<-stop
+	log.Println("[System] 🛑 Shutdown signal received. Draining connections...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("[Error] HTTP shutdown error: %v", err)
+	}
+
+	log.Println("[System] ✅ Server stopped gracefully.")
 }

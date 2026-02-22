@@ -37,7 +37,8 @@ func NewServer(gen *agent.Generator, embed *embedding.Batcher, parser pb.Documen
 }
 
 // RegisterRoutes registers all API endpoints with a new ServeMux
-func (s *Server) RegisterRoutes() *http.ServeMux {
+// and wraps them with production middleware (request ID, logging, recovery).
+func (s *Server) RegisterRoutes() http.Handler {
 	mux := http.NewServeMux()
 
 	// REST API Endpoints defined in API.md
@@ -48,7 +49,16 @@ func (s *Server) RegisterRoutes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/documents/{document_id}/status", s.handleDocumentStatus)
 	mux.HandleFunc("HEAD /api/v1/documents/{document_id}", s.handleDocumentExist)
 
-	return mux
+	// Health / Readiness probes (Kubernetes)
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	mux.HandleFunc("GET /readyz", s.handleReadyz)
+
+	// Apply middleware stack
+	return Chain(mux,
+		RecoveryMiddleware,
+		LoggingMiddleware,
+		RequestIDMiddleware,
+	)
 }
 
 type QueryRequest struct {
@@ -357,4 +367,17 @@ func (s *Server) handleDocumentExist(w http.ResponseWriter, r *http.Request) {
 	// or we just return 404 until we have a better mapping.
 	w.WriteHeader(http.StatusNotImplemented)
 	_, _ = w.Write([]byte("HEAD by ID not implemented, use status check by hash"))
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
+	// TODO: Add actual DB connectivity checks when DB health interfaces are available.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ready"}`))
 }

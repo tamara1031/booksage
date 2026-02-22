@@ -23,23 +23,33 @@ type SearchResult struct {
 
 // FusionRetriever manages concurrent retrieval across multiple data stores.
 type FusionRetriever struct {
-	qdrant   *qdrantpkg.Client
-	neo4j    *neo4jpkg.Client
-	embedder *embedding.Batcher
+	qdrant     *qdrantpkg.Client
+	neo4j      *neo4jpkg.Client
+	embedder   *embedding.Batcher
+	classifier *IntentClassifier
+	operator   *RouteOperator
 }
 
 // NewFusionRetriever creates a new FusionRetriever with real DB clients.
 func NewFusionRetriever(qdrant *qdrantpkg.Client, neo4j *neo4jpkg.Client, embedder *embedding.Batcher) *FusionRetriever {
 	return &FusionRetriever{
-		qdrant:   qdrant,
-		neo4j:    neo4j,
-		embedder: embedder,
+		qdrant:     qdrant,
+		neo4j:      neo4j,
+		embedder:   embedder,
+		classifier: &IntentClassifier{},
+		operator:   NewRouteOperator(),
 	}
 }
 
 // Retrieve performs asynchronous parallel requests across engines and ensembles them.
+// Uses intent classification to dynamically weight the fusion.
 func (f *FusionRetriever) Retrieve(ctx context.Context, query string) ([]SearchResult, error) {
 	log.Printf("[Fusion] Starting parallel retrieval for: %s", query)
+
+	// Classify query intent for weighted fusion
+	intent := f.classifier.Classify(query)
+	weights := f.operator.GetWeights(intent)
+	log.Printf("[Fusion] Intent: %s | Weights: %v", intent, weights)
 
 	// Add a global timeout for the entire fusion process.
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -89,8 +99,13 @@ func (f *FusionRetriever) Retrieve(ctx context.Context, query string) ([]SearchR
 		return nil, err
 	}
 
-	log.Printf("[Fusion] Retrieval complete. Integrating %d total results via RRF...", len(allResults))
-	return f.performRRF(allResults), nil
+	log.Printf("[Fusion] Retrieval complete. Integrating %d total results via weighted RRF...", len(allResults))
+	return f.performWeightedRRF(allResults, weights), nil
+}
+
+// LastIntent returns the intent from the most recent classification (for SSE reporting).
+func (f *FusionRetriever) ClassifyIntent(query string) QueryIntent {
+	return f.classifier.Classify(query)
 }
 
 // searchVectorDB queries Qdrant using dense vector similarity.
@@ -155,43 +170,45 @@ func (f *FusionRetriever) searchGraphDB(ctx context.Context, query string) ([]Se
 	return out, nil
 }
 
-// performRRF applies Reciprocal Rank Fusion to ensemble the results.
-func (f *FusionRetriever) performRRF(results []SearchResult) []SearchResult {
+// performWeightedRRF applies intent-weighted Reciprocal Rank Fusion.
+func (f *FusionRetriever) performWeightedRRF(results []SearchResult, weights EngineWeights) []SearchResult {
 	if len(results) == 0 {
 		return results
 	}
 
-	// RRF: score = sum(1 / (k + rank)) where k=60
 	const k = 60.0
 
-	// Group by source to establish per-engine rankings
+	// Group by source for per-engine rankings
 	sourceGroups := map[string][]SearchResult{}
 	for _, r := range results {
 		sourceGroups[r.Source] = append(sourceGroups[r.Source], r)
 	}
 
-	// Calculate RRF scores
+	// Calculate weighted RRF scores
 	rrfScores := map[string]float32{}
 	rrfContent := map[string]SearchResult{}
-	for _, group := range sourceGroups {
+	for source, group := range sourceGroups {
+		weight := weights[source]
+		if weight == 0 {
+			weight = 0.33
+		}
 		for rank, r := range group {
-			score := float32(1.0 / (k + float64(rank+1)))
-			key := r.Content // Use content as dedup key
-			rrfScores[key] += score
+			rrfScore := float32(1.0/(k+float64(rank+1))) * weight
+			key := r.Content
+			rrfScores[key] += rrfScore
 			if _, exists := rrfContent[key]; !exists {
 				rrfContent[key] = r
 			}
 		}
 	}
 
-	// Build final sorted results
 	var fused []SearchResult
 	for key, r := range rrfContent {
 		r.Score = rrfScores[key]
 		fused = append(fused, r)
 	}
 
-	// Sort by RRF score descending
+	// Sort descending
 	for i := 0; i < len(fused); i++ {
 		for j := i + 1; j < len(fused); j++ {
 			if fused[j].Score > fused[i].Score {

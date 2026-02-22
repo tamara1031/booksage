@@ -8,10 +8,13 @@ BookSage is the core engine of the system, split into a Go API Orchestrator and 
 
 ### Go API Orchestrator (`api/`)
 **Role:** The high-performance gateway and cognitive conductor.
-- **REST API Server**: Serves public HTTP endpoints (e.g., `/api/v1/query`, `/api/v1/ingest`).
+- **REST API Server**: Serves public HTTP endpoints (e.g., `/api/v1/query`, `/api/v1/ingest`). Includes middleware stack (Request ID, Logging, Recovery).
 - **Agentic Loop (CoR & Self-RAG)**: Orchestrates reasoning. It decomposes user queries into sub-queries and critiques retrieved data for hallucinations.
-- **Fusion Retrieval Orchestrator**: Uses lightweight `goroutines` to query multiple databases (Neo4j, Qdrant) concurrently without blocking.
-- **LLM Router**: Intelligently dispatches tasks. Heavy reasoning goes to Cloud LLMs (Gemini), while lightweight embedding tasks are sent to the local Worker.
+- **Fusion Retrieval Orchestrator**: Uses lightweight `goroutines` to query multiple databases (Neo4j, Qdrant) concurrently. Intent-driven dynamic fusion with weighted RRF.
+- **LLM Router**: Intelligently dispatches tasks. Heavy reasoning goes to Cloud LLMs (Gemini), while lightweight tasks are sent to the local Ollama model.
+- **Production Middleware**: Request ID propagation, structured access logging, panic recovery, and Circuit Breaker (Closed/Open/HalfOpen) for external service calls.
+- **Health Probes**: `/healthz` (liveness) and `/readyz` (readiness) endpoints for Kubernetes.
+- **Graceful Shutdown**: SIGTERM/SIGINT signal handling with connection draining.
 
 ### Python ML Worker (`worker/`)
 **Role:** The heavy-lifting Machine Learning and ETL engine.

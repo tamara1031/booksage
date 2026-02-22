@@ -14,6 +14,7 @@ import (
 type Generator struct {
 	router    *llm.Router
 	retriever *fusion.FusionRetriever
+	critique  *SelfRAGCritique
 }
 
 // NewGenerator initializes the Agentic Generator with the necessary routing logic.
@@ -21,6 +22,7 @@ func NewGenerator(router *llm.Router, retriever *fusion.FusionRetriever) *Genera
 	return &Generator{
 		router:    router,
 		retriever: retriever,
+		critique:  NewSelfRAGCritique(router),
 	}
 }
 
@@ -30,63 +32,121 @@ type GeneratorEvent struct {
 	Content string `json:"content"`
 }
 
-// GenerateAnswer orchestrates the RAG pipeline:
-// 1. Keyword extraction (local LLM)
-// 2. Fusion retrieval (Qdrant + Neo4j)
-// 3. Context-aware answer generation (Cloud/Local LLM)
+// GenerateAnswer orchestrates the full RAG pipeline:
+// 1. Chain-of-Retrieval (CoR): decompose complex queries into sub-queries
+// 2. Fusion retrieval with intent-driven weights
+// 3. Self-RAG: critique retrieval relevance
+// 4. Context-aware answer generation
+// 5. Self-RAG: critique generation grounding
 // Results are streamed via SSE events through the provided channel.
 func (g *Generator) GenerateAnswer(ctx context.Context, query string, stream chan<- GeneratorEvent) {
 	defer close(stream)
 	log.Printf("[Agent] Starting generation for query: %s", query)
 
-	// Step 1: Keyword extraction (lightweight, local model)
-	stream <- GeneratorEvent{Type: "reasoning", Content: "[Agent] Extracting keywords using Local Model..."}
-	localClient := g.router.RouteLLMTask(llm.TaskSimpleKeywordExtraction)
+	// Step 1: CoR — Sub-query decomposition
+	stream <- GeneratorEvent{Type: "reasoning", Content: "[CoR] Analyzing query complexity..."}
+	subQueries := g.decomposeQuery(ctx, query)
 
-	keywords, err := localClient.Generate(ctx, "Extract the most important keywords from this question. Return only the keywords separated by commas: "+query)
-	if err != nil {
-		stream <- GeneratorEvent{Type: "error", Content: fmt.Sprintf("keyword extraction failed: %v", err)}
-		// Fall back to using the raw query
-		keywords = query
+	if len(subQueries) > 1 {
+		stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[CoR] Decomposed into %d sub-queries", len(subQueries))}
 	}
-	stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Agent] Keywords: %s", keywords)}
 
-	// Step 2: Fusion Retrieval (parallel Qdrant + Neo4j search)
-	stream <- GeneratorEvent{Type: "reasoning", Content: "[Agent] Searching knowledge base (Vector + Graph)..."}
+	// Step 2: Fusion Retrieval for each sub-query
+	var allContextChunks []string
 
-	var contextChunks []string
 	if g.retriever != nil {
-		results, err := g.retriever.Retrieve(ctx, query)
-		if err != nil {
-			stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Agent] Retrieval warning: %v. Proceeding without context.", err)}
-		} else {
+		for i, sq := range subQueries {
+			stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Fusion] Searching for sub-query %d/%d: %s", i+1, len(subQueries), truncate(sq, 80))}
+
+			results, err := g.retriever.Retrieve(ctx, sq)
+			if err != nil {
+				stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Fusion] Search warning: %v", err)}
+				continue
+			}
+
+			// Step 3: Self-RAG — Retrieval Critique
 			for _, r := range results {
-				contextChunks = append(contextChunks, r.Content)
+				if g.critique != nil {
+					if !g.critique.EvaluateRetrieval(ctx, sq, r.Content) {
+						stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Self-RAG] Filtered irrelevant result from %s", r.Source)}
+						continue
+					}
+				}
+
+				allContextChunks = append(allContextChunks, r.Content)
 				stream <- GeneratorEvent{
 					Type:    "source",
 					Content: fmt.Sprintf("[%s] (score: %.2f) %s", r.Source, r.Score, truncate(r.Content, 200)),
 				}
 			}
-			stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Agent] Retrieved %d context chunks from knowledge base.", len(results))}
 		}
+
+		stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Agent] %d relevant context chunks after Self-RAG filtering.", len(allContextChunks))}
 	} else {
 		stream <- GeneratorEvent{Type: "reasoning", Content: "[Agent] No retriever configured. Generating without context."}
 	}
 
-	// Step 3: Context-aware Generation (heavy reasoning, Cloud LLM)
-	stream <- GeneratorEvent{Type: "reasoning", Content: "[Agent] Generating answer with context..."}
+	// Step 4: Context-aware Generation
+	stream <- GeneratorEvent{Type: "reasoning", Content: "[Agent] Generating answer..."}
 	geminiClient := g.router.RouteLLMTask(llm.TaskAgenticReasoning)
 
-	prompt := buildRAGPrompt(query, contextChunks)
-
-	finalAnswer, err := geminiClient.Generate(ctx, prompt)
+	prompt := buildRAGPrompt(query, allContextChunks)
+	answer, err := geminiClient.Generate(ctx, prompt)
 	if err != nil {
 		stream <- GeneratorEvent{Type: "error", Content: fmt.Sprintf("generation failed: %v", err)}
 		return
 	}
 
-	stream <- GeneratorEvent{Type: "answer", Content: finalAnswer}
+	// Step 5: Self-RAG — Generation Critique
+	if g.critique != nil && len(allContextChunks) > 0 {
+		contextJoined := strings.Join(allContextChunks, "\n\n")
+		support := g.critique.EvaluateGeneration(ctx, answer, contextJoined)
+		stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Self-RAG] Support level: %s", support)}
+
+		if support == NoSupport {
+			stream <- GeneratorEvent{Type: "reasoning", Content: "[Self-RAG] Answer not supported by context. Regenerating..."}
+
+			answer, err = geminiClient.Generate(ctx, prompt+"\n\nIMPORTANT: Base your answer STRICTLY on the provided context.")
+			if err != nil {
+				stream <- GeneratorEvent{Type: "error", Content: fmt.Sprintf("regeneration failed: %v", err)}
+				return
+			}
+		}
+	}
+
+	stream <- GeneratorEvent{Type: "answer", Content: answer}
 	log.Printf("[Agent] Generation complete.")
+}
+
+// decomposeQuery uses an LLM to break complex queries into sub-queries (CoR).
+// Falls back to the original query if decomposition fails or isn't needed.
+func (g *Generator) decomposeQuery(ctx context.Context, query string) []string {
+	client := g.router.RouteLLMTask(llm.TaskSimpleKeywordExtraction)
+
+	prompt := fmt.Sprintf(`Analyze this question. If it contains multiple distinct information needs, decompose it into 2-3 simpler sub-questions. If it's already simple, return it as-is.
+
+Return ONLY the questions, one per line. No numbering, no explanations.
+
+Question: %s`, query)
+
+	resp, err := client.Generate(ctx, prompt)
+	if err != nil {
+		log.Printf("[CoR] Decomposition failed: %v (using original query)", err)
+		return []string{query}
+	}
+
+	var subQueries []string
+	for _, line := range strings.Split(resp, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && len(trimmed) > 5 {
+			subQueries = append(subQueries, trimmed)
+		}
+	}
+
+	if len(subQueries) == 0 {
+		return []string{query}
+	}
+	return subQueries
 }
 
 // buildRAGPrompt constructs a prompt with retrieved context for the LLM.

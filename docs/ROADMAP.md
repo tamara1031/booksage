@@ -12,10 +12,10 @@
 |---|---|---|
 | Infra & CI | Docker Compose, CI (lint/test), Makefile | — |
 | gRPC通信 | Proto定義, Client Streaming (Parse), Unary (Embedding) | — |
-| Go API | Server (REST), Config, Embedding Batcher, LLM Router, Ingest Saga | Fusion Retriever (3エンジン全てモック), Agent/Generator |
-| Go DB Client | Qdrant Client (real SDK), Neo4j Client (real SDK) | Fusion内の検索ロジック |
-| Python Worker | gRPC Servicer, DocumentParser (Docling/PyMuPDF), EmbeddingGenerator | SelfRAGCritique, Agent, Retrieval Adapters |
-| DB Schema | — | Qdrant Collection / Neo4j Node設計 |
+| Go API | Server (REST+SSE+Middleware), Config, Embedding Batcher, LLM Router, Ingest Saga, Fusion Retriever (Dense+Graph), Agent/Generator (CoR+Self-RAG), Circuit Breaker, Graceful Shutdown | RAPTOR Engine, ColBERT Engine |
+| Go DB Client | Qdrant Client (Search+Insert+Delete+PayloadIndex), Neo4j Client (Insert+Search+Delete) | — |
+| Python Worker | gRPC Servicer, DocumentParser (Docling/PyMuPDF), EmbeddingGenerator | SelfRAGCritique, ColBERT, RAPTOR |
+| DB Schema | Qdrant Collection (dense), Neo4j (Document→Chunk graph) | ColBERT/RAPTOR Collections |
 
 ---
 
@@ -23,13 +23,13 @@
 
 > **目標**: ドキュメント1冊を投入し、Qdrant/Neo4jに正しくデータが格納される。
 
-| タスク | コンポーネント |
-|---|---|
-| Worker: Doclingパース結果をChunkに分割 → gRPC Response | Python |
-| Go: gRPC Parse応答からChunk/Nodeを正しく構築 | Go |
-| Go: Real Qdrant Client でベクトル挿入 | Go |
-| Go: Real Neo4j Client でノード/エッジ挿入 | Go |
-| E2E Test: PDF投入→DB確認の自動テスト | Both |
+| タスク | コンポーネント | Status |
+|---|---|---|
+| Worker: Doclingパース結果をChunkに分割 → gRPC Response | Python | ✅ |
+| Go: gRPC Parse応答からChunk/Nodeを正しく構築 | Go | ✅ |
+| Go: Real Qdrant Client でベクトル挿入 (deterministic ID + PayloadIndex) | Go | ✅ |
+| Go: Real Neo4j Client でノード/エッジ挿入 (Document→Chunk graph) | Go | ✅ |
+| E2E Test: PDF投入→DB確認の自動テスト | Both | 🟡 |
 
 **完了基準**: `make up-build` → PDF アップロード → Qdrant/Neo4j にデータが格納される。
 
@@ -39,13 +39,13 @@
 
 > **目標**: 1つのベクトルDBエンジンで質問に回答できる。
 
-| タスク | コンポーネント |
-|---|---|
-| Go Fusion: Qdrant Dense Search を実接続 | Go |
-| Worker: Query用 Embedding 生成 | Python |
-| Go Agent: LLM に Context + Query を渡して回答生成 | Go |
-| Server: SSE Streaming でリアルタイム回答返却 | Go |
-| Neo4j Cypher Query 実装 (Graph Search) | Go |
+| タスク | コンポーネント | Status |
+|---|---|---|
+| Go Fusion: Qdrant Dense Search を実接続 | Go | ✅ |
+| Worker: Query用 Embedding 生成 | Python | ✅ |
+| Go Agent: LLM に Context + Query を渡して回答生成 (RAG Prompt) | Go | ✅ |
+| Server: SSE Streaming でリアルタイム回答返却 | Go | ✅ |
+| Neo4j Cypher Query 実装 (Graph Search / CONTAINS) | Go | ✅ |
 
 **完了基準**: `/api/v1/query` に質問 → Qdrant検索 → LLM生成 → SSE回答。
 
@@ -55,14 +55,14 @@
 
 > **目標**: 3エンジン並列検索 + Intent Fusion + Self-RAG評価ループ。
 
-| タスク | コンポーネント |
-|---|---|
-| Go Fusion: 3エンジン(Graph/RAPTOR/ColBERT)の実接続 | Go |
-| Python: ColBERT Late Interaction 実装 | Python |
-| Python: RAPTOR Tree 構築 + 検索 | Python |
-| Go Agent: Self-RAG (Retrieval Critique → Generation Critique) | Go |
-| Go Agent: Chain-of-Retrieval (CoR) サブクエリ分解 | Go |
-| Intent-Driven Dynamic Fusion (Operator Pattern) | Go/Python |
+| タスク | コンポーネント | Status |
+|---|---|---|
+| Go Fusion: 3エンジン(Graph/RAPTOR/ColBERT)の実接続 | Go | 🟡 Graph✅ RAPTOR/ColBERT stub |
+| Python: ColBERT Late Interaction 実装 | Python | 🟡 |
+| Python: RAPTOR Tree 構築 + 検索 | Python | 🟡 |
+| Go Agent: Self-RAG (Retrieval Critique → Generation Critique) | Go | ✅ |
+| Go Agent: Chain-of-Retrieval (CoR) サブクエリ分解 | Go | ✅ |
+| Intent-Driven Dynamic Fusion (Operator Pattern + Weighted RRF) | Go | ✅ |
 
 **完了基準**: 複合質問 → 意図分類 → 重み付きFusion → 自己評価 → 高品質回答。
 
@@ -72,13 +72,16 @@
 
 > **目標**: 可観測性、耐障害性、パフォーマンス最適化。
 
-| タスク | コンポーネント |
-|---|---|
-| OpenTelemetry トレーシング (correlation_id 伝搬) | Both |
-| Rate Limiting / Circuit Breaker | Go |
-| GPU メモリ管理 & モデル Warm-up | Python |
-| Kubernetes マニフェスト (HPA, Resource Limits) | Infra |
-| BookScout OPDS Scraper → Ingest API 連携 | Go |
+| タスク | コンポーネント | Status |
+|---|---|---|
+| Request ID Middleware + Structured Logging + Recovery | Go | ✅ |
+| Circuit Breaker (Closed/Open/HalfOpen) | Go | ✅ |
+| Health/Readiness Probes (/healthz, /readyz) | Go | ✅ |
+| Graceful Shutdown (SIGTERM/SIGINT) | Go | ✅ |
+| OpenTelemetry トレーシング (correlation_id 伝搬) | Both | 🟡 |
+| GPU メモリ管理 & モデル Warm-up | Python | 🟡 |
+| Kubernetes マニフェスト (HPA, Resource Limits) | Infra | 🟡 |
+| BookScout OPDS Scraper → Ingest API 連携 | Go | 🟡 |
 
 ---
 
