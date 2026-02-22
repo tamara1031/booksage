@@ -13,7 +13,7 @@ def is_port_open(host, port):
 def test_worker_startup():
     # 1. Start the worker process
     # Assuming we are in worker/ directory when running pytest
-    cmd = ["python", "src/booksage/main.py"]
+    cmd = ["python", "src/booksage/server.py"]
     env = os.environ.copy()
     env["PYTHONPATH"] = "src"
 

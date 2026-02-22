@@ -36,7 +36,13 @@ func NewGraphExtractor(router repository.LLMRouter) *GraphExtractor {
 
 // ExtractEntitiesAndRelations uses an LLM to find entities and their connections in a chunk.
 func (e *GraphExtractor) ExtractEntitiesAndRelations(ctx context.Context, text string) ([]Entity, []Relation, error) {
+	if e == nil || e.router == nil {
+		return nil, nil, nil
+	}
 	client := e.router.RouteLLMTask(repository.TaskType("simple_keyword_extraction"))
+	if client == nil {
+		return nil, nil, nil
+	}
 
 	prompt := fmt.Sprintf(`Extract key entities and their relationships from the following text.
 Respond ONLY with a JSON object containing "entities" and "relations" arrays.

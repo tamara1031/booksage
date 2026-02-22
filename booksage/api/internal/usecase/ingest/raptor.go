@@ -29,7 +29,13 @@ func NewRaptorBuilder(router repository.LLMRouter) *RaptorBuilder {
 // BuildTree constructs a hierarchical summary tree based on document structure.
 // It returns a list of tree nodes to be inserted into Neo4j.
 func (b *RaptorBuilder) BuildTree(ctx context.Context, docID string, chunks []map[string]any) ([]map[string]any, []map[string]any, error) {
+	if b == nil || b.router == nil {
+		return nil, nil, nil
+	}
 	client := b.router.RouteLLMTask(repository.TaskType("deep_summarization"))
+	if client == nil {
+		return nil, nil, nil
+	}
 
 	var treeNodes []map[string]any
 	var treeEdges []map[string]any

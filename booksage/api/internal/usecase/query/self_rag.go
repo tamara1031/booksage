@@ -47,7 +47,11 @@ Context: %s`, query, context)
 		return true // Fallback to including it
 	}
 
-	return strings.Contains(strings.ToLower(resp), "relevant")
+	resp = strings.ToLower(resp)
+	if strings.Contains(resp, "irrelevant") {
+		return false
+	}
+	return strings.Contains(resp, "relevant")
 }
 
 // EvaluateGeneration checks if an answer is supported by the context.

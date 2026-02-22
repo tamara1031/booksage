@@ -31,9 +31,11 @@ func (m *mockQdrant) Close() error { return nil }
 type mockNeo4j struct {
 	insertErr error
 	deleteErr error
+	nodeCount int
 }
 
 func (m *mockNeo4j) InsertNodesAndEdges(ctx context.Context, docID string, nodes []map[string]any, edges []map[string]any) error {
+	m.nodeCount = len(nodes)
 	return m.insertErr
 }
 func (m *mockNeo4j) DeleteDocument(ctx context.Context, docID string) error {
@@ -75,13 +77,18 @@ func TestSaga_Success(t *testing.T) {
 	sagaRepo := &MockSagaRepository{}
 	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
 
-	err := orch.RunIngestionSaga(context.Background(), &models.IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []map[string]any{{"text": "chunk1"}}, []map[string]any{{"text": "node1"}})
+	err := orch.RunIngestionSaga(context.Background(), &models.IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []map[string]any{{"content": "chunk1"}}, []map[string]any{{"text": "node1"}})
 	if err != nil {
 		t.Fatalf("Expected success, got %v", err)
 	}
 
 	if q.deleted {
 		t.Errorf("Expected no compensation on success")
+	}
+
+	// Should have graph nodes from: original graphNodes (1) + treeNodes (at least 1)
+	if n.nodeCount < 1 {
+		t.Errorf("Expected graph nodes to be inserted, got %d", n.nodeCount)
 	}
 }
 
