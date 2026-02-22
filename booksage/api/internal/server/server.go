@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +11,8 @@ import (
 	"net/http"
 
 	"github.com/booksage/booksage-api/internal/agent"
+	"github.com/booksage/booksage-api/internal/database"
+	"github.com/booksage/booksage-api/internal/database/models"
 	"github.com/booksage/booksage-api/internal/embedding"
 	"github.com/booksage/booksage-api/internal/ingest"
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
@@ -40,6 +44,7 @@ func (s *Server) RegisterRoutes() *http.ServeMux {
 	// Go 1.22+ supports HTTP method routing directly in ServeMux
 	mux.HandleFunc("POST /api/v1/query", s.handleQuery)
 	mux.HandleFunc("POST /api/v1/ingest", s.handleIngest)
+	mux.HandleFunc("GET /api/v1/ingest/status", s.handleIngestStatusByHash)
 	mux.HandleFunc("GET /api/v1/documents/{document_id}/status", s.handleDocumentStatus)
 	mux.HandleFunc("HEAD /api/v1/documents/{document_id}", s.handleDocumentExist)
 
@@ -114,23 +119,38 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	metadataStr := r.FormValue("metadata")
 	log.Printf("[Server] Received ingest request for %s (size: %d, metadata: %s)", header.Filename, header.Size, metadataStr)
 
-	// Determine document_id (mock logic: same as returned in JSON)
-	docID := "doc-" + header.Filename
-
-	// Check if document already exists to prevent duplicate ingestion
-	exists, err := s.ingestSaga.DocumentExists(r.Context(), docID)
-	if err != nil {
-		log.Printf("[Server] Error checking document existence for %s: %v", docID, err)
-		http.Error(w, "Failed to verify document status", http.StatusInternalServerError)
+	// Calculate SHA-256 hash for deduplication
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		http.Error(w, "Failed to calculate hash", http.StatusInternalServerError)
 		return
 	}
-	if exists {
-		log.Printf("[Server] Document %s already exists, skipping ingestion", docID)
-		w.WriteHeader(http.StatusConflict) // 409 Conflict means it's already there
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"document_id": docID,
-			"status":      "completed",
-		})
+	fileHash := hash.Sum(nil)
+	_, _ = file.Seek(0, io.SeekStart) // Reset file pointer
+
+	// Initialize document model
+	docModel := &models.Document{
+		FileHash: fileHash,
+		Title:    header.Filename,
+		FilePath: header.Filename, // In a real app, this would be the actual storage path
+		FileSize: header.Size,
+		MimeType: header.Header.Get("Content-Type"),
+	}
+
+	// Prepare or resume ingestion saga
+	saga, err := s.ingestSaga.StartOrResumeIngestion(r.Context(), docModel)
+	if err != nil {
+		log.Printf("[Server] Ingestion check failed for %x: %v", fileHash, err)
+		// Check if it's "already ingested" error
+		if err.Error() == fmt.Sprintf("document already ingested: %x", fileHash) {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"hash":   fmt.Sprintf("%x", fileHash),
+				"status": "completed",
+			})
+			return
+		}
+		http.Error(w, "Failed to initialize ingestion", http.StatusInternalServerError)
 		return
 	}
 
@@ -148,7 +168,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 			Metadata: &pb.DocumentMetadata{
 				Filename:   header.Filename,
 				FileType:   header.Header.Get("Content-Type"),
-				DocumentId: docID,
+				DocumentId: fmt.Sprintf("%d", saga.DocumentID),
 			},
 		},
 	}); err != nil {
@@ -230,19 +250,19 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Run the Saga Orchestrator
-		if err := s.ingestSaga.RunIngestionSaga(ctx, parsedResp.DocumentId, chunks, graphNodes); err != nil {
-			log.Printf("[Server - Async] Ingestion saga failed for %s: %v", parsedResp.DocumentId, err)
+		if err := s.ingestSaga.RunIngestionSaga(ctx, saga, chunks, graphNodes); err != nil {
+			log.Printf("[Server - Async] Ingestion saga failed for ID %d: %v", saga.ID, err)
 			return
 		}
 
-		log.Printf("[Server - Async] Successfully completed asynchronous ingestion for %s", parsedResp.DocumentId)
+		log.Printf("[Server - Async] Successfully completed asynchronous ingestion for saga ID %d", saga.ID)
 	}(resp)
 
 	w.WriteHeader(http.StatusAccepted)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"document_id": resp.DocumentId,
-		"status":      "processing",
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"saga_id": saga.ID,
+		"status":  "processing",
 	})
 }
 
@@ -272,6 +292,51 @@ func (s *Server) handleDocumentStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleIngestStatusByHash(w http.ResponseWriter, r *http.Request) {
+	hashStr := r.URL.Query().Get("hash")
+	if hashStr == "" {
+		http.Error(w, "Query parameter 'hash' (hex) is required", http.StatusBadRequest)
+		return
+	}
+
+	hashBytes, err := hex.DecodeString(hashStr)
+	if err != nil {
+		http.Error(w, "Invalid hex hash", http.StatusBadRequest)
+		return
+	}
+
+	saga, err := s.ingestSaga.GetDocumentStatus(r.Context(), hashBytes)
+	if err != nil {
+		if err == database.ErrNotFound {
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_started"})
+			return
+		}
+		log.Printf("[Server] Failed checking status for hash %s: %v", hashStr, err)
+		http.Error(w, "Failed to check status", http.StatusInternalServerError)
+		return
+	}
+
+	statusStr := "pending"
+	switch saga.Status {
+	case models.SagaStatusProcessing:
+		statusStr = "processing"
+	case models.SagaStatusCompleted:
+		statusStr = "completed"
+	case models.SagaStatusFailed:
+		statusStr = "failed"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"saga_id":      saga.ID,
+		"document_id":  saga.DocumentID,
+		"status":       statusStr,
+		"current_step": saga.CurrentStep,
+		"updated_at":   saga.UpdatedAt.Unix(),
+	})
+}
+
 // handleDocumentExist is used for the HEAD request to check if a document is already indexed.
 func (s *Server) handleDocumentExist(w http.ResponseWriter, r *http.Request) {
 	docID := r.PathValue("document_id")
@@ -280,17 +345,9 @@ func (s *Server) handleDocumentExist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exists, err := s.ingestSaga.DocumentExists(r.Context(), docID)
-	if err != nil {
-		log.Printf("[Server] Failed checking DB for document %s: %v", docID, err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	if !exists {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
+	// This should be updated to use hash in a real scenario, but keeping path param for now
+	// For now, let's assume docID here is a hex hash for demonstration if possible,
+	// or we just return 404 until we have a better mapping.
+	w.WriteHeader(http.StatusNotImplemented)
+	_, _ = w.Write([]byte("HEAD by ID not implemented, use status check by hash"))
 }

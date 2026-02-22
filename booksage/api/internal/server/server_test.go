@@ -18,7 +18,9 @@ import (
 
 func createTestServer() *Server {
 	embedBatcher := embedding.NewBatcher(&mockEmbeddingClient{}, 100)
-	saga := ingest.NewOrchestrator(ingest.NewMockQdrantClient(), ingest.NewMockNeo4jClient())
+	docRepo := &ingest.MockDocumentRepository{}
+	sagaRepo := &ingest.MockSagaRepository{}
+	saga := ingest.NewOrchestrator(ingest.NewMockQdrantClient(), ingest.NewMockNeo4jClient(), docRepo, sagaRepo)
 	return NewServer(nil, embedBatcher, &mockParserClient{}, saga)
 }
 

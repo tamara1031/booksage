@@ -2,16 +2,20 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http"
 
 	"github.com/booksage/booksage-api/internal/agent"
 	"github.com/booksage/booksage-api/internal/config"
+	"github.com/booksage/booksage-api/internal/database/bunstore"
 	"github.com/booksage/booksage-api/internal/embedding"
 	"github.com/booksage/booksage-api/internal/ingest"
 	"github.com/booksage/booksage-api/internal/llm"
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
 	"github.com/booksage/booksage-api/internal/server"
+	"github.com/uptrace/bun/dialect/sqlitedialect"
+	"github.com/uptrace/bun/driver/sqliteshim"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -74,9 +78,19 @@ func main() {
 	embedBatcher := embedding.NewBatcher(embedClient, 100)
 
 	// Initialize Database Clients and Saga Orchestrator
+	sqldb, err := sql.Open(sqliteshim.ShimName, "booksage.db")
+	if err != nil {
+		log.Fatalf("[Error] Failed to open sqlite: %v", err)
+	}
+
+	bunStore, err := bunstore.NewBunStore(sqldb, sqlitedialect.New())
+	if err != nil {
+		log.Fatalf("[Error] Failed to initialize Database: %v", err)
+	}
+
 	qdrantMock := ingest.NewMockQdrantClient()
 	neo4jMock := ingest.NewMockNeo4jClient()
-	sagaOrchestrator := ingest.NewOrchestrator(qdrantMock, neo4jMock)
+	sagaOrchestrator := ingest.NewOrchestrator(qdrantMock, neo4jMock, bunStore, bunStore)
 
 	// ==========================================
 	// Initialize and Start HTTP Server

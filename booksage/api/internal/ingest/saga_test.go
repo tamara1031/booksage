@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/booksage/booksage-api/internal/database/models"
 )
 
 type mockQdrant struct {
@@ -41,9 +43,11 @@ func (m *mockNeo4j) DocumentExists(ctx context.Context, docID string) (bool, err
 func TestSaga_Success(t *testing.T) {
 	q := &mockQdrant{}
 	n := &mockNeo4j{}
-	orch := NewOrchestrator(q, n)
+	docRepo := &MockDocumentRepository{}
+	sagaRepo := &MockSagaRepository{}
+	orch := NewOrchestrator(q, n, docRepo, sagaRepo)
 
-	err := orch.RunIngestionSaga(context.Background(), "doc1", []any{"chunk1"}, []any{"node1"})
+	err := orch.RunIngestionSaga(context.Background(), &models.IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []any{"chunk1"}, []any{"node1"})
 	if err != nil {
 		t.Fatalf("Expected success, got %v", err)
 	}
@@ -56,9 +60,11 @@ func TestSaga_Success(t *testing.T) {
 func TestSaga_QdrantFails(t *testing.T) {
 	q := &mockQdrant{insertErr: errors.New("qdrant error")}
 	n := &mockNeo4j{}
-	orch := NewOrchestrator(q, n)
+	docRepo := &MockDocumentRepository{}
+	sagaRepo := &MockSagaRepository{}
+	orch := NewOrchestrator(q, n, docRepo, sagaRepo)
 
-	err := orch.RunIngestionSaga(context.Background(), "doc1", []any{"chunk1"}, []any{"node1"})
+	err := orch.RunIngestionSaga(context.Background(), &models.IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []any{"chunk1"}, []any{"node1"})
 	if err == nil {
 		t.Fatalf("Expected error, got nil")
 	}
@@ -75,9 +81,11 @@ func TestSaga_QdrantFails(t *testing.T) {
 func TestSaga_Neo4jFails_CompensatesQdrant(t *testing.T) {
 	q := &mockQdrant{}
 	n := &mockNeo4j{insertErr: errors.New("neo4j error")}
-	orch := NewOrchestrator(q, n)
+	docRepo := &MockDocumentRepository{}
+	sagaRepo := &MockSagaRepository{}
+	orch := NewOrchestrator(q, n, docRepo, sagaRepo)
 
-	err := orch.RunIngestionSaga(context.Background(), "doc1", []any{"chunk1"}, []any{"node1"})
+	err := orch.RunIngestionSaga(context.Background(), &models.IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []any{"chunk1"}, []any{"node1"})
 	if err == nil {
 		t.Fatalf("Expected error, got nil")
 	}
@@ -90,9 +98,11 @@ func TestSaga_Neo4jFails_CompensatesQdrant(t *testing.T) {
 func TestSaga_Neo4jFails_CompensationFails(t *testing.T) {
 	q := &mockQdrant{deleteErr: errors.New("delete error")}
 	n := &mockNeo4j{insertErr: errors.New("neo4j error")}
-	orch := NewOrchestrator(q, n)
+	docRepo := &MockDocumentRepository{}
+	sagaRepo := &MockSagaRepository{}
+	orch := NewOrchestrator(q, n, docRepo, sagaRepo)
 
-	err := orch.RunIngestionSaga(context.Background(), "doc1", []any{"chunk1"}, []any{"node1"})
+	err := orch.RunIngestionSaga(context.Background(), &models.IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []any{"chunk1"}, []any{"node1"})
 	if err == nil {
 		t.Fatalf("Expected error, got nil")
 	}
