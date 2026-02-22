@@ -173,7 +173,6 @@ worker/src/booksage/pb/
 booksage/api/booksage-api
 bookscout/bookscout
 **/booksage-api
-**/bookscout
 
 # Go test binaries
 *.test

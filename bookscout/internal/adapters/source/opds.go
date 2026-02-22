@@ -3,6 +3,7 @@ package source
 import (
 	"bookscout/internal/adapters/util"
 	"bookscout/internal/core/domain/models"
+	"bookscout/internal/core/domain/ports"
 	"context"
 	"fmt"
 	"io"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/mmcdole/gofeed/atom"
 )
+
+// Ensure OPDSAdapter implements BookSource
+var _ ports.BookSource = (*OPDSAdapter)(nil)
 
 type OPDSAdapter struct {
 	catalogURL string
