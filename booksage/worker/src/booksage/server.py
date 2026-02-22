@@ -35,8 +35,6 @@ class DocumentParser:
         """
         Routes the file to the appropriate ETL parser based on file extension.
         """
-        import os
-
         _, ext = os.path.splitext(file_path)
         ext = ext.lower()
 
