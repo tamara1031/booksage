@@ -4,9 +4,9 @@ from concurrent.futures import ProcessPoolExecutor
 
 import grpc
 
-from booksage.config import load
-from booksage.application.service import DocumentParser
 from booksage.adapters.grpc.handler import BookSageWorker
+from booksage.application.service import DocumentParser
+from booksage.config import load
 from booksage.pb.booksage.v1 import booksage_pb2_grpc
 
 

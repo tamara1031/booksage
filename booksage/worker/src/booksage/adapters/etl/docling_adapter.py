@@ -2,7 +2,6 @@ import logging
 import uuid
 
 from booksage.domain import DocumentMetadata
-
 from booksage.domain.models import RawDocument
 from booksage.ports.parser import IDocumentParser
 

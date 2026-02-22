@@ -1,15 +1,9 @@
 import logging
 import os
-import tempfile
-from collections.abc import AsyncIterable
-from concurrent.futures import ProcessPoolExecutor
 
-import grpc
-
-from booksage.config import load
-from booksage.domain.models import DocumentMetadata
 from booksage.adapters.etl.docling_adapter import DoclingParser
 from booksage.adapters.etl.epub_adapter import EpubParser
+from booksage.domain.models import DocumentMetadata
 from booksage.ports.parser import IDocumentParser
 
 class DocumentParser:

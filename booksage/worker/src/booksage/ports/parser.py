@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 
-from booksage.domain.models import DocumentMetadata
-from booksage.domain.models import RawDocument
+from booksage.domain.models import DocumentMetadata, RawDocument
 
 
 class IDocumentParser(ABC):
