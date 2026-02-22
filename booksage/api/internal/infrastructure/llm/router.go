@@ -31,6 +31,20 @@ func NewRouter(local repository.LLMClient, gemini repository.LLMClient) *Router 
 	}
 }
 
+// GetLocalClient returns the local LLM client for maintenance tasks.
+func (r *Router) GetLocalClient() repository.LLMClient {
+	return r.localClient
+}
+
+// RouteEmbeddingTask returns a client capable of generating embeddings.
+func (r *Router) RouteEmbeddingTask(task repository.TaskType) repository.EmbeddingClient {
+	client := r.RouteLLMTask(task)
+	if ec, ok := client.(repository.EmbeddingClient); ok {
+		return ec
+	}
+	return nil
+}
+
 // RouteLLMTask evaluates the cognitive load required and routes to the optimal backend (ADR-006).
 func (r *Router) RouteLLMTask(task repository.TaskType) repository.LLMClient {
 	var selected repository.LLMClient

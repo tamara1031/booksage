@@ -40,6 +40,22 @@ type ollamaResponse struct {
 	Response string `json:"response"`
 }
 
+type ollamaEmbeddingRequest struct {
+	Model  string   `json:"model"`
+	Prompt string   `json:"prompt,omitempty"`
+	Input  []string `json:"input,omitempty"`
+}
+
+type ollamaEmbeddingResponse struct {
+	Embedding  []float32   `json:"embedding,omitempty"`
+	Embeddings [][]float32 `json:"embeddings,omitempty"`
+}
+
+type ollamaPullRequest struct {
+	Model  string `json:"model"`
+	Stream bool   `json:"stream"`
+}
+
 // Generate sends a prompt to the local Ollama instance.
 func (c *LocalOllamaClient) Generate(ctx context.Context, prompt string) (string, error) {
 	log.Printf("[Ollama] 🏠 Sending request to Local Ollama (%s)...", c.model)
@@ -84,4 +100,86 @@ func (c *LocalOllamaClient) Generate(ctx context.Context, prompt string) (string
 // Name returns the descriptive name of the client.
 func (c *LocalOllamaClient) Name() string {
 	return fmt.Sprintf("Ollama (%s) [Local]", c.model)
+}
+
+// Embed generates embeddings for the given texts using Ollama's embedding API.
+func (c *LocalOllamaClient) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	log.Printf("[Ollama] 🏠 Generating embeddings for %d texts using %s...", len(texts), c.model)
+
+	apiURL := fmt.Sprintf("%s/api/embed", c.host)
+
+	reqBody, err := json.Marshal(ollamaEmbeddingRequest{
+		Model: c.model,
+		Input: texts,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ollama embedding request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ollama embedding request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ollama embedding request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ollama returned error status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var ollamaResp ollamaEmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		return nil, fmt.Errorf("failed to decode ollama embedding response: %w", err)
+	}
+
+	if len(ollamaResp.Embeddings) > 0 {
+		return ollamaResp.Embeddings, nil
+	}
+
+	if len(ollamaResp.Embedding) > 0 {
+		return [][]float32{ollamaResp.Embedding}, nil
+	}
+
+	return nil, fmt.Errorf("no embeddings returned from ollama")
+}
+
+// PullModel pulls the specified model from the Ollama library.
+func (c *LocalOllamaClient) PullModel(ctx context.Context, model string) error {
+	log.Printf("[Ollama] 📥 Pulling model '%s'...", model)
+
+	apiURL := fmt.Sprintf("%s/api/pull", c.host)
+
+	reqBody, err := json.Marshal(ollamaPullRequest{
+		Model:  model,
+		Stream: false,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal ollama pull request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return fmt.Errorf("failed to create ollama pull request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("ollama pull request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("ollama pull returned error status %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Printf("[Ollama] 📥 Model '%s' pulled successfully.", model)
+	return nil
 }

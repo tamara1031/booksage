@@ -74,66 +74,20 @@ class DocumentParser:
         }
 
 
-class EmbeddingGenerator:
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
-        # Load model lazily or at init depending on memory needs
-        # In a real heavy environment, maybe we load at __init__ to warm up
-        self.model_name = model_name
-        self._model = None
-
-    def _get_model(self):
-        if self._model is None:
-            from sentence_transformers import SentenceTransformer
-
-            self._model = SentenceTransformer(self.model_name)
-        return self._model
-
-    def generate(self, texts: list[str], embedding_type: str, task_type: str) -> dict:
-        """
-        Implementation of the GPU/CPU-heavy tensor calculations using sentence-transformers.
-        """
-        if not texts:
-            return {"results": [], "total_tokens": 0}
-
-        model = self._get_model()
-        logging.info(
-            f"Starting actual embedding generation for {len(texts)} chunks using {self.model_name}"
-        )
-
-        # Calculate embeddings
-        embeddings = model.encode(texts, convert_to_numpy=True)
-
-        # Optional: handling sparse vs dense if embedding_type is different, but for now we do dense
-        results = [
-            {"text": text, "dense": vector.tolist()}
-            for text, vector in zip(texts, embeddings, strict=False)
-        ]
-
-        # Approximate token count (simplified)
-        total_tokens = sum(len(text.split()) for text in texts) * 2
-
-        return {"results": results, "total_tokens": total_tokens}
-
 
 # ============================================================================
 # gRPC Servicer Implementation
 # ============================================================================
 
 
-class BookSageWorker(
-    booksage_pb2_grpc.DocumentParserServiceServicer, booksage_pb2_grpc.EmbeddingServiceServicer
-):
+class BookSageWorker(booksage_pb2_grpc.DocumentParserServiceServicer):
     def __init__(
         self,
         parser: DocumentParser,
-        embedder: EmbeddingGenerator,
         cpu_executor: ProcessPoolExecutor,
-        gpu_executor: ThreadPoolExecutor,
     ):
         self.parser = parser
-        self.embedder = embedder
         self.cpu_executor = cpu_executor
-        self.gpu_executor = gpu_executor
 
     async def Parse(  # noqa: N802
         self,
@@ -234,42 +188,6 @@ class BookSageWorker(
 
         return metadata, file_chunks
 
-    async def GenerateEmbeddings(  # noqa: N802
-        self, request: booksage_pb2.EmbeddingRequest, context: grpc.aio.ServicerContext
-    ) -> booksage_pb2.EmbeddingResponse:
-        logging.info(f"Received GenerateEmbeddings request for {len(request.texts)} texts")
-
-        if not request.texts:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "No texts provided for embedding")
-
-        try:
-            # 【最重要】 offloading GPU-bound operations to ThreadPoolExecutor for CUDA safety
-            loop = asyncio.get_running_loop()
-            response_dict = await loop.run_in_executor(
-                self.gpu_executor,
-                self.embedder.generate,
-                list(request.texts),
-                request.embedding_type,
-                request.task_type,
-            )
-
-            results = [
-                booksage_pb2.EmbeddingResult(
-                    text=res["text"], dense=booksage_pb2.DenseVector(values=res["dense"])
-                )
-                for res in response_dict["results"]
-            ]
-
-            return booksage_pb2.EmbeddingResponse(
-                results=results, total_tokens=response_dict["total_tokens"]
-            )
-        except grpc.aio.AioRpcError:
-            raise
-        except Exception as e:
-            logging.error(f"Error generating embeddings: {e}", exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL, f"Internal error during embedding generation: {e}"
-            )
 
 
 # ============================================================================
@@ -284,31 +202,22 @@ async def serve():
     # Initialize Dependencies (DI)
     # In a real app, these would come from container.py or similar setup
     parser = DocumentParser()
-    embedder = EmbeddingGenerator()
 
     # Initialize the ProcessPoolExecutor for heavy CPU lifting tasks
-    # Defaults to os.cpu_count() workers
     cpu_executor = ProcessPoolExecutor(max_workers=config.max_workers)
-
-    # Initialize Context-safe ThreadPoolExecutor for PyTorch/GPU tasks
-    # Defaults to max 4 to avoid OOM on GPUs
-    gpu_executor = ThreadPoolExecutor(max_workers=min(4, config.max_workers))
 
     worker = BookSageWorker(
         parser=parser,
-        embedder=embedder,
         cpu_executor=cpu_executor,
-        gpu_executor=gpu_executor,
     )
 
     booksage_pb2_grpc.add_DocumentParserServiceServicer_to_server(worker, server)
-    booksage_pb2_grpc.add_EmbeddingServiceServicer_to_server(worker, server)
 
     server.add_insecure_port(config.worker_listen_addr)
 
     logging.info(
         f"Starting BookSage worker gRPC server on {config.worker_listen_addr} "
-        f"with {cpu_executor._max_workers} CPU procs and {gpu_executor._max_workers} GPU threads"
+        f"with {cpu_executor._max_workers} CPU procs"
     )
     await server.start()
 
@@ -319,7 +228,6 @@ async def serve():
     finally:
         # Graceful shutdown of the executors
         cpu_executor.shutdown(wait=True)
-        gpu_executor.shutdown(wait=True)
 
 
 if __name__ == "__main__":

@@ -74,12 +74,23 @@ func main() {
 	log.Printf("[System] 🛤️  LLM Router initialized (Cloud: %s | Local: %s)",
 		geminiClient.Name(), localClient.Name())
 
+	// Pull configured Ollama model at startup (dynamic model management)
+	log.Printf("[System] 📥 Ensuring local model '%s' is available...", cfg.OllamaModel)
+	if err := localClient.PullModel(ctx, cfg.OllamaModel); err != nil {
+		log.Printf("[Warning] 📥 Failed to pull model '%s' at startup: %v. The system will attempt to run with existing models.", cfg.OllamaModel, err)
+	}
+
 	// Initialize gRPC clients
 	parserClient := pb.NewDocumentParserServiceClient(conn)
-	embedClient := pb.NewEmbeddingServiceClient(conn)
 
-	// Wrap embedClient in a Batcher (max 100 texts per gRPC batch)
-	embedBatcher := embedding.NewBatcher(embedClient, 100)
+	// Route Embedding Task (Ollama by default as per Router logic)
+	embeddingClient := llmRouter.RouteEmbeddingTask(llm.TaskEmbedding)
+	if embeddingClient == nil {
+		log.Fatalf("[Error] Failed to route embedding task. Ensure a valid LLM client is configured.")
+	}
+
+	// Wrap embeddingClient in a Batcher (max 100 texts per batch)
+	embedBatcher := embedding.NewBatcher(embeddingClient, 100)
 
 	// Initialize Database Clients and Saga Orchestrator
 	sqldb, err := sql.Open(sqliteshim.ShimName, "booksage.db")

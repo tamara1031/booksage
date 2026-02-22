@@ -72,3 +72,29 @@ func (c *GeminiClient) Name() string {
 func (c *GeminiClient) Close() error {
 	return c.client.Close()
 }
+
+// Embed generates embeddings for the given texts using Gemini's embedding API.
+func (c *GeminiClient) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	log.Printf("[Gemini] ☁️ Generating embeddings for %d texts...", len(texts))
+
+	// Gemini Pro is typically used for text, but for embeddings we use a specialized model
+	em := c.client.EmbeddingModel("text-embedding-004")
+
+	batch := em.NewBatch()
+	for _, t := range texts {
+		batch.AddContent(genai.Text(t))
+	}
+
+	resp, err := em.BatchEmbedContents(ctx, batch)
+	if err != nil {
+		return nil, fmt.Errorf("gemini embedding failed: %w", err)
+	}
+
+	embeddings := make([][]float32, len(resp.Embeddings))
+	for i, e := range resp.Embeddings {
+		embeddings[i] = e.Values
+	}
+
+	log.Printf("[Gemini] ☁️ Embeddings generated successfully.")
+	return embeddings, nil
+}

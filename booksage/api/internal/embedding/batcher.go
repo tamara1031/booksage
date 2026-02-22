@@ -6,18 +6,18 @@ import (
 	"log"
 	"sync"
 
+	"github.com/booksage/booksage-api/internal/domain/repository"
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
 )
 
-// Batcher handles safely chunking embedding requests to respect gRPC memory limits (4MB default).
+// Batcher handles safely chunking embedding requests to respect memory limits.
 type Batcher struct {
-	client    pb.EmbeddingServiceClient
+	client    repository.EmbeddingClient
 	batchSize int
 }
 
 // NewBatcher creates a new embedding batcher.
-// Standard recommended batch size is 100 texts to prevent gRPC resource exhausted errors.
-func NewBatcher(client pb.EmbeddingServiceClient, batchSize int) *Batcher {
+func NewBatcher(client repository.EmbeddingClient, batchSize int) *Batcher {
 	return &Batcher{
 		client:    client,
 		batchSize: batchSize,
@@ -58,14 +58,8 @@ func (b *Batcher) GenerateEmbeddingsBatched(ctx context.Context, texts []string,
 		go func(pts []string, startIdx int, bIdx int) {
 			defer wg.Done()
 
-			req := &pb.EmbeddingRequest{
-				Texts:         pts,
-				EmbeddingType: embType,
-				TaskType:      taskType,
-			}
-
-			// Call gRPC endpoint
-			resp, err := b.client.GenerateEmbeddings(ctx, req)
+			// Call local/cloud endpoint directly instead of gRPC
+			embeddings, err := b.client.Embed(ctx, pts)
 			if err != nil {
 				log.Printf("[Embedding Batcher] Batch %d failed: %v", bIdx, err)
 				errCh <- fmt.Errorf("batch %d failed: %w", bIdx, err)
@@ -74,10 +68,16 @@ func (b *Batcher) GenerateEmbeddingsBatched(ctx context.Context, texts []string,
 
 			mu.Lock()
 			// Reassemble results based on original indexing
-			for j, res := range resp.Results {
-				results[startIdx+j] = res
+			for j, vec := range embeddings {
+				results[startIdx+j] = &pb.EmbeddingResult{
+					Text: pts[j],
+					Vector: &pb.EmbeddingResult_Dense{
+						Dense: &pb.DenseVector{Values: vec},
+					},
+				}
 			}
-			totalTokens += resp.TotalTokens
+			// Approximate token count (simplified)
+			totalTokens += int32(len(pts) * 10) // Mock token count
 			mu.Unlock()
 
 			log.Printf("[Embedding Batcher] Batch %d completed successfully.", bIdx)
