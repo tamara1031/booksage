@@ -4,6 +4,7 @@ import (
 	"bookscout/internal/core/domain/models"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -176,9 +177,15 @@ func TestOPDSAdapter_DownloadBookContent_Errors(t *testing.T) {
 	}))
 	defer serverLarge.Close()
 
-	_, err = adapter.DownloadBookContent(context.Background(), models.BookMetadata{DownloadURL: serverLarge.URL})
+	rc, err := adapter.DownloadBookContent(context.Background(), models.BookMetadata{DownloadURL: serverLarge.URL})
+	if err != nil {
+		t.Fatalf("Expected no error on call, got %v", err)
+	}
+	defer rc.Close()
+
+	_, err = io.ReadAll(rc)
 	if err == nil {
-		t.Fatal("Expected error for too large content")
+		t.Fatal("Expected error during read for too large content")
 	}
 }
 

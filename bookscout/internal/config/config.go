@@ -22,8 +22,11 @@ type Config struct {
 	WorkerSinceTimestamp int64 `env:"SCOUT_WORKER_SINCE_TIMESTAMP" envDefault:"0"`
 	WorkerConcurrency    int   `env:"SCOUT_WORKER_CONCURRENCY" envDefault:"5"`
 	WorkerBatchSize      int   `env:"SCOUT_WORKER_BATCH_SIZE" envDefault:"0"`
+	WorkerDelayMS        int   `env:"SCOUT_WORKER_DELAY_MS" envDefault:"500"`
 
 	MaxBookSizeBytes int64 `env:"SCOUT_MAX_BOOK_SIZE_BYTES" envDefault:"52428800"`
+
+	StateFilePath string `env:"SCOUT_STATE_FILE_PATH" envDefault:"scout_state.json"`
 }
 
 func (c *Config) Validate() error {

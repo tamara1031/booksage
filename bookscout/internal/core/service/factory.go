@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bookscout/internal/adapters/destination"
 	"bookscout/internal/adapters/source"
 	"bookscout/internal/config"
 	"bookscout/internal/core/domain/ports"
@@ -14,4 +15,9 @@ func CreateBookSource(cfg *config.Config) ports.BookDataSource {
 		// Default to OPDS
 		return source.NewOPDSAdapter(cfg.OPDSBaseURL, cfg.OPDSUsername, cfg.OPDSPassword, cfg.MaxBookSizeBytes, cfg.LogLevel)
 	}
+}
+
+func CreateIngestService(cfg *config.Config, source ports.BookDataSource, state ports.StateStore) *IngestService {
+	dest := destination.NewBookSageAPIAdapter(cfg.APIBaseURL)
+	return NewIngestService(cfg, source, dest, state)
 }

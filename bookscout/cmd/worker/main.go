@@ -1,18 +1,14 @@
 package main
 
 import (
+	"bookscout/internal/adapters/util"
 	"bookscout/internal/config"
 	"bookscout/internal/core/domain/models"
 	"bookscout/internal/core/domain/ports"
 	"bookscout/internal/core/service"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"mime/multipart"
-	"net/http"
 	"sync"
 	"time"
 )
@@ -31,16 +27,21 @@ func main() {
 
 // Run executes the worker batch ingestion. Exposed for testing.
 func Run(ctx context.Context, cfg *config.Config, source ports.BookDataSource) error {
+	state, err := util.NewFileStateStore(cfg.StateFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize state: %w", err)
+	}
 
-	// Determine since timestamp
+	ingestSvc := service.CreateIngestService(cfg, source, state)
+
+	// Determine since timestamp. Config takes precedence over state watermark.
 	since := cfg.WorkerSinceTimestamp
+	if since == 0 {
+		since = state.GetWatermark()
+	}
+
 	sinceTime := time.Unix(since, 0)
 	log.Printf("Starting Go Worker (Batch Execution, since %d [%s])...", since, sinceTime.Format(time.RFC3339))
-	log.Printf("Debug Config: WorkerSinceTimestamp=%d, WorkerBatchSize=%d", cfg.WorkerSinceTimestamp, cfg.WorkerBatchSize)
-
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithTimeout(ctx, 30*time.Minute)
-	defer cancel()
 
 	books, err := source.FetchNewBooks(ctx, since)
 	if err != nil {
@@ -59,117 +60,50 @@ func Run(ctx context.Context, cfg *config.Config, source ports.BookDataSource) e
 
 	log.Printf("Processing %d books. Starting concurrent ingestion...", len(books))
 
-	concurrency := cfg.WorkerConcurrency
-	log.Printf("Concurrency limit set to: %d", concurrency)
+	var maxTimestamp int64 = since
+	var tsMu sync.Mutex
 
-	sem := make(chan struct{}, concurrency)
+	sem := make(chan struct{}, cfg.WorkerConcurrency)
 	var wg sync.WaitGroup
 	for _, book := range books {
 		wg.Add(1)
 		sem <- struct{}{} // Acquire semaphore
+
+		// Politeness delay - stagger the starts
+		if cfg.WorkerDelayMS > 0 {
+			time.Sleep(time.Duration(cfg.WorkerDelayMS) * time.Millisecond)
+		}
+
 		go func(b models.BookMetadata) {
 			defer wg.Done()
 			defer func() { <-sem }() // Release semaphore
-			log.Printf("Processing: %s", b.Title)
 
-			content, err := source.DownloadBookContent(ctx, b)
-			if err != nil {
-				log.Printf("Error downloading book %s: %v", b.ID, err)
+			if err := ingestSvc.IngestBook(ctx, b); err != nil {
+				log.Printf("Error processing %s: %v", b.Title, err)
 				return
 			}
 
-			// Check if already registered
-			registered, err := isRegistered(cfg.APIBaseURL, b.ID)
-			if err != nil {
-				log.Printf("Warning: Failed to check registration for %s: %v", b.ID, err)
+			// Track max timestamp for watermark
+			tsMu.Lock()
+			ts := b.AddedAt.Unix()
+			if ts > maxTimestamp {
+				maxTimestamp = ts
 			}
-			if registered {
-				log.Printf("Skipping already registered book: %s", b.Title)
-				return
-			}
-
-			if err := ingestToAPI(cfg.APIBaseURL, b, content); err != nil {
-				log.Printf("Error ingesting book %s to API: %v", b.ID, err)
-				return
-			}
-			log.Printf("Successfully queued for ingestion: %s", b.Title)
+			tsMu.Unlock()
 		}(book)
 	}
 
 	wg.Wait()
+
+	// Update watermark if we made progress
+	if maxTimestamp > since {
+		if err := state.UpdateWatermark(maxTimestamp); err != nil {
+			log.Printf("Warning: failed to update watermark: %v", err)
+		} else {
+			log.Printf("Watermark updated to: %d (%s)", maxTimestamp, time.Unix(maxTimestamp, 0).Format(time.RFC3339))
+		}
+	}
+
 	log.Println("Batch ingestion complete. Exiting.")
 	return nil
-}
-
-// ingestToAPI sends book metadata and content to the API server. Exposed for testing.
-func ingestToAPI(baseURL string, book models.BookMetadata, content []byte) error {
-	url := fmt.Sprintf("%s/ingest", baseURL)
-
-	var b bytes.Buffer
-	w := multipart.NewWriter(&b)
-
-	fw, err := w.CreateFormFile("file", book.ID+".epub") // Using ID as filename for consistency
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(fw, bytes.NewReader(content)); err != nil {
-		return err
-	}
-
-	// Generate standard JSON metadata according to API.md
-	metadata := map[string]string{
-		"title":         book.Title,
-		"author":        book.Author,
-		"description":   book.Description,
-		"thumbnail_url": book.ThumbnailURL,
-	}
-	metadataJSON, _ := json.Marshal(metadata)
-
-	// Add metadata field
-	_ = w.WriteField("metadata", string(metadataJSON))
-
-	w.Close()
-
-	req, err := http.NewRequest("POST", url, &b)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", w.FormDataContentType())
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusAccepted {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return nil
-}
-
-// isRegistered checks if the document already exists in the destination API.
-func isRegistered(baseURL string, docID string) (bool, error) {
-	url := fmt.Sprintf("%s/documents/%s", baseURL, docID)
-	req, err := http.NewRequest("HEAD", url, nil)
-	if err != nil {
-		return false, err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		return true, nil
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return false, nil
-	}
-
-	return false, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 }

@@ -5,16 +5,19 @@ import (
 	"bookscout/internal/core/domain/models"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // mockBookSource is a simple mock for ports.BookDataSource
 type mockBookSource struct {
 	books    []models.BookMetadata
-	content  []byte
+	content  string
 	errFetch error
 	errDown  error
 }
@@ -26,11 +29,11 @@ func (m *mockBookSource) FetchNewBooks(ctx context.Context, lastCheckTimestamp i
 	return m.books, nil
 }
 
-func (m *mockBookSource) DownloadBookContent(ctx context.Context, book models.BookMetadata) ([]byte, error) {
+func (m *mockBookSource) DownloadBookContent(ctx context.Context, book models.BookMetadata) (io.ReadCloser, error) {
 	if m.errDown != nil {
 		return nil, m.errDown
 	}
-	return m.content, nil
+	return io.NopCloser(strings.NewReader(m.content)), nil
 }
 
 func TestRun_Success(t *testing.T) {
@@ -81,19 +84,25 @@ func TestRun_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
+	tempFile, _ := os.CreateTemp("", "scout_test_state_*.json")
+	defer os.Remove(tempFile.Name())
+	tempFile.Close()
+
 	cfg := &config.Config{
 		APIBaseURL:           ts.URL,
 		WorkerSinceTimestamp: 1700000000,
 		WorkerBatchSize:      10,
 		WorkerConcurrency:    2,
+		StateFilePath:        tempFile.Name(),
 	}
 
+	now := time.Now()
 	mockSource := &mockBookSource{
 		books: []models.BookMetadata{
-			{Title: "Test Book", ID: "1", Author: "Author A"},
-			{Title: "Test Book 2", ID: "2", Author: "Author B"},
+			{Title: "Test Book", ID: "1", Author: "Author A", AddedAt: now.Add(-1 * time.Hour)},
+			{Title: "Test Book 2", ID: "2", Author: "Author B", AddedAt: now},
 		},
-		content: []byte("dummy pdf content..."),
+		content: "dummy pdf content...",
 	}
 
 	err := Run(context.Background(), cfg, mockSource)
@@ -103,10 +112,15 @@ func TestRun_Success(t *testing.T) {
 }
 
 func TestRun_NoBooks(t *testing.T) {
+	tempFile, _ := os.CreateTemp("", "scout_test_state_nobooks_*.json")
+	defer os.Remove(tempFile.Name())
+	tempFile.Close()
+
 	cfg := &config.Config{
 		WorkerSinceTimestamp: 0,
 		WorkerBatchSize:      10,
 		WorkerConcurrency:    2,
+		StateFilePath:        tempFile.Name(),
 	}
 
 	mockSource := &mockBookSource{
@@ -116,34 +130,5 @@ func TestRun_NoBooks(t *testing.T) {
 	err := Run(context.Background(), cfg, mockSource)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
-	}
-}
-
-func TestIngestToAPI_ErrorResponses(t *testing.T) {
-	// Server returning 500 Internal Server Error
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("internal error"))
-	}))
-	defer ts.Close()
-
-	book := models.BookMetadata{Title: "Test Book"}
-	err := ingestToAPI(ts.URL, book, []byte("data"))
-
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "status 500") {
-		t.Errorf("expected 500 status error, got %v", err)
-	}
-}
-
-func TestIngestToAPI_InvalidURL(t *testing.T) {
-	book := models.BookMetadata{Title: "Test Book"}
-	err := ingestToAPI("http://invalid-url-that-does-not-exist", book, []byte("data"))
-
-	if err == nil {
-		t.Fatal("expected error due to invalid URL, got nil")
 	}
 }

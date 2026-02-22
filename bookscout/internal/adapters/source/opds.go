@@ -38,8 +38,11 @@ func NewOPDSAdapter(catalogURL, username, password string, maxSize int64, logLev
 		username:   username,
 		password:   password,
 		client: &http.Client{
-			Transport: &util.LoggingTransport{LogLevel: logLevel},
-			Timeout:   5 * time.Minute,
+			Transport: &util.RetryTransport{
+				MaxRetries: 3,
+				Base:       &util.LoggingTransport{LogLevel: logLevel},
+			},
+			Timeout: 5 * time.Minute,
 		},
 		maxSize: maxSize,
 	}
@@ -248,7 +251,28 @@ func (a *OPDSAdapter) fetchPage(ctx context.Context, targetURL string, lastCheck
 	return books, nextPageURL, subsections, nil
 }
 
-func (a *OPDSAdapter) DownloadBookContent(ctx context.Context, book models.BookMetadata) ([]byte, error) {
+// limitReadCloser wraps an io.LimitedReader to satisfy the io.ReadCloser interface
+// and enforces the maximum size by returning an error if exceeded.
+type limitReadCloser struct {
+	limitReader *io.LimitedReader
+	closer      io.Closer
+	maxSize     int64
+}
+
+func (l *limitReadCloser) Read(p []byte) (n int, err error) {
+	n, err = l.limitReader.Read(p)
+	if l.limitReader.N <= 0 && (err == nil || err == io.EOF) {
+		// If we've read everything allowed (maxSize + 1)
+		return n, fmt.Errorf("book content exceeds maximum allowed size of %d bytes", l.maxSize)
+	}
+	return n, err
+}
+
+func (l *limitReadCloser) Close() error {
+	return l.closer.Close()
+}
+
+func (a *OPDSAdapter) DownloadBookContent(ctx context.Context, book models.BookMetadata) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", book.DownloadURL, nil)
 	if err != nil {
 		return nil, err
@@ -262,21 +286,16 @@ func (a *OPDSAdapter) DownloadBookContent(ctx context.Context, book models.BookM
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
 		return nil, fmt.Errorf("failed to download book from OPDS link: %d", resp.StatusCode)
 	}
 
-	limitReader := io.LimitReader(resp.Body, a.maxSize+1)
-	data, err := io.ReadAll(limitReader)
-	if err != nil {
-		return nil, err
-	}
-
-	if int64(len(data)) > a.maxSize {
-		return nil, fmt.Errorf("book content exceeds maximum allowed size")
-	}
-
-	return data, nil
+	// We wrap in a LimitedReader with maxSize + 1 to detect overflow.
+	return &limitReadCloser{
+		limitReader: &io.LimitedReader{R: resp.Body, N: a.maxSize + 1},
+		closer:      resp.Body,
+		maxSize:     a.maxSize,
+	}, nil
 }
