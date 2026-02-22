@@ -4,7 +4,8 @@ BookScout is a dedicated collection worker (intended for Kubernetes CronJobs) th
 
 ## 🚀 Role
 - **Data Acquisition**: Periodically scans OPDS catalogs for new books.
-- **Ingestion**: Downloads book binaries and metadata, then forwards them to the BookSage REST API (`/api/v1/ingest`).
+- **Persistent Watermarks**: Features state-aware tracking using a local state store to ensure idempotent and reliable scraping across restarts.
+- **Integrated Ingestion**: Downloads book binaries and metadata, then forwards them to the BookSage REST API (`/api/v1/ingest`), triggering the **Saga-based** SOTA RAG pipeline.
 
 ## 🛠️ Setup & Configuration
 

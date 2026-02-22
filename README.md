@@ -13,7 +13,7 @@
 This project aims to treat book libraries not just as "passive storage that needs to be actively accessed," but as an autonomous **Knowledge Base (a "Sage")** that organizes information and responds to interactions.
 
 ### Hallucination Reduction
-To reduce hallucinations (plausible lies) and derive advanced reasoning and accurate answers comparable to human experts, we have integrated the latest retrieval and generation methods (Fusion Retrieval, Self-RAG, CoR).
+To reduce hallucinations and derive expert-level reasoning, we have integrated SOTA hybrid architectures: **Lite-BookRAG** for structural hierarchy and **LightRAG** for incremental graph-based retrieval. Key techniques include Dual-level Retrieval, Self-RAG, and Pareto-optimal ranking.
 
 ## 🏗️ Architecture Highlights
 
@@ -21,25 +21,25 @@ To reduce hallucinations (plausible lies) and derive advanced reasoning and accu
 The system leverages a modern microservice-style monorepo structure containing two main subprojects:
 
 **BookSage Core (`booksage/`)**
-* **Go Orchestrator (`booksage/api/`)**: Handles concurrent user requests, complex workflow orchestration, and high-performance parallel database queries (Fusion Retrieval) safely using lightweight Goroutines. Includes the **LLM Router** for intelligent task dispatching.
-* **Python ML Worker (`booksage/worker/`)**: Dedicated to heavy Machine Learning workflows, including document parsing (ETL via Docling) and dense/tensor embedding operations (PyTorch), orchestrated via gRPC.
-* **gRPC Boundaries**: The two worlds communicate over strictly defined Protocol Buffers (`booksage/proto/booksage/v1/`). We use **gRPC Client Streaming** instead of sending raw bytes all at once to circumvent the 4MB message limit and avoid memory spikes for massive PDF transfers (as we do not assume a shared storage volume between containers). Additionally, we heavily utilize **gRPC Server Streaming** for low-latency Agentic LLM responses to minimize Time-To-First-Token (TTFT).
+* **Go Orchestrator (`booksage/api/`)**: The cognitive logic engine. Managed by Go for superior concurrency. It handles **Embedding generation (Ollama)**, **Entity/Structure Extraction**, and high-performance parallel queries via Goroutines. It also manages **SQLite-based Saga status** for reliable ingestion.
+* **Python ML Worker (`booksage/worker/`)**: Specializes in layout analysis and structured ETL using **Docling**. It provides the internal gRPC backend for high-precision parsing, chunking, and specialized tensor calculations (e.g., ColBERTv2 interaction).
+* **gRPC Boundaries**: Communication occurs over strict Protocol Buffers. We use **gRPC Client Streaming** for efficient document ingestion (streaming chunks) and **Server Streaming** for real-time Agentic generation traces.
 
 **BookScout Scraper (`bookscout/`)**
 * A dedicated collection worker (intended for k8s CronJob) that pulls from remote OPDS feeds and pushes documents into the main BookSage API.
 
 ### 2. Local & Cloud LLM Hybrid Routing
-* **Intelligent Dispatching**: Uses an internal Go Router to switch between Local models and Cloud APIs (Gemini 1.5 Pro) for 2M context window reasoning and complex agentic loops. Local models are explicitly categorized by role: **Ollama** runs the generative LLM workload, while **ColBERT/embedding models** (hosted in the worker) handle the dense/sparse indexing and ranking.
-* **Cost & Performance Efficiency**: Offloads cognitive-heavy tasks to the cloud, while retaining fast, free embedding operations locally.
+* **Intelligent Dispatching**: Uses a weight-based internal Go Router to switch between Local models (Ollama for logic/embeddings) and Cloud APIs (Gemini 1.5 Pro).
+* **Local Intelligence**: Directly generates dense vectors and knowledge graph entities using local **Ollama** clients, keeping low-latency operations safe and private.
 
-### 3. Multi-Engine Fusion Retrieval
-To breakthrough the limitations of a single vector search, we execute and ensemble (fusion) the following engines in parallel via Go:
-* **Graph DB (Neo4j)**: Reasoning based on table of contents trees and entity graph relationships.
-* **Vector DB (Qdrant)**: RAPTOR tree representations and ColBERTv2 strict token matching via Late Interaction.
+### 3. SOTA Hybrid Retrieval & Ingestion
+* **Dual-level Retrieval**: Extracts **Low-level (Entities)** and **High-level (Themes)** keywords in a single pass to drive multi-engine parallel search across Vector (Qdrant) and Graph (Neo4j) stores.
+* **Skyline Ranker**: A Pareto-optimal ranker that merges results from disparate engines, pruning noise while preserving structural and semantic relevance.
+* **Incremental Graph Updates**: Leverages LightRAG principles to update Neo4j incrementally (Union-based), linking entities to document trees via **GT-Links** without global re-computation.
+* **Reliable Saga Management**: An internal **SQLite** engine manages ingestion state as a Finite State Machine (FSM), ensuring hash-based deduplication and idempotent processing.
 
-### 4. Agentic Generation (CoR & Self-RAG)
-* **Chain-of-Retrieval (CoR)**: Autonomously decomposes complex questions into sub-queries.
-* **Self-RAG Critique**: Evaluates and corrects the "relevance" of retrieved information and "factual support" of generated answers at runtime.
+### 4. Agentic Self-RAG Loop
+* **Retrieval & Generation Critique**: Autonomously evaluates context relevance and generation grounding (Support Level), performing correction or re-generation when necessary.
 
 ## 📂 Project Structure
 

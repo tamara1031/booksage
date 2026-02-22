@@ -1,63 +1,59 @@
 # BookSage Sub-project Architecture
 
-BookSage is the core engine of the system, split into a Go API Orchestrator and a Python ML Worker.
+BookSage is a RAG engine designed for high-precision knowledge synthesis from complex, long-context book documents. It operates on a sophisticated hybrid architecture that synergizes the strengths of **LightRAG** (incremental graph updates) and **Lite-BookRAG** (hierarchical structural awareness).
 
 ---
 
-## 1. Components
+## 1. System Overview & Component Roles
+
+The system is architected as a clean decoupling between cognitive orchestration and structural data processing.
 
 ### Go API Orchestrator (`api/`)
-**Role:** The high-performance gateway and cognitive conductor.
-- **REST API Server**: Serves public HTTP endpoints (e.g., `/api/v1/query`, `/api/v1/ingest`). Includes middleware stack (Request ID, Logging, Recovery).
-- **Agentic Loop (CoR & Self-RAG)**: Orchestrates reasoning. It decomposes user queries into sub-queries and critiques retrieved data for hallucinations.
-- **Fusion Retrieval Orchestrator**: Uses lightweight `goroutines` to query multiple databases (Neo4j, Qdrant) concurrently. Implements **Skyline Ranker** (Pareto-optimal) for multi-objective fusion.
-- **LLM Router (Weight-based)**: Intelligently dispatches tasks based on cognitive load (ADR-006). 
-    - **Heavy Reasoning**: Routed to Cloud APIs (Gemini) or powerful local models.
-    - **Lightweight Tasks**: Routed to local LLMs (e.g., `llama3`) for intent classification and keyword extraction.
-    - **Dedicated Embeddings**: Routed to specialized local embedding models (e.g., `nomic-embed-text`) to ensure vector quality.
-- **Production Middleware**: Request ID propagation, structured access logging, panic recovery, and Circuit Breaker (Closed/Open/HalfOpen) for external service calls.
-- **Health Probes**: `/healthz` (liveness) and `/readyz` (readiness) endpoints for Kubernetes.
-- **Graceful Shutdown**: SIGTERM/SIGINT signal handling with connection draining.
+**Role:** The "Cognitive Conductor" and primary inference engine.
+- **REST & SSE Server**: High-concurrency gateway facilitating real-time Agentic reasoning traces via Server-Sent Events.
+- **Unified Inference Management**: 
+    - **LLM/Embedding Orchestration**: Go directly calls local/cloud LLMs (via Ollama/Gemini) for all cognitive tasks, including embedding generation and entity extraction.
+    - **Dual-Model Routing**: Intelligently switches between specialized local embedding models (e.g., `nomic-embed-text`) and reasoning models.
+- **SOTA Retrieval & Ranking**:
+    - **Dual-level Retrieval**: A LightRAG-inspired methodology that extracts both **Low-level (Entities)** and **High-level (Themes)** keywords in a single pass to drive parallel multi-engine searches across Vector DB (**Qdrant**) and Graph DB (**Neo4j**).
+    - **Skyline Ranker**: A BookRAG-based Pareto-optimal ranking engine that merges disparate search results, prioritizing non-dominated chunks based on semantic relevance and structural importance.
+- **Reliable Ingestion Saga**: Implements a **Saga Pattern** orchestrated via an internal **SQLite** engine to manage idempotent document processing, hash-derived deduplication, and state recovery.
 
 ### Python ML Worker (`worker/`)
-**Role:** The heavy-lifting Machine Learning and ETL engine.
-- **ETL (Document Parsing)**: High-speed parsing of PDFs and EPUBs (using Docling/PyMuPDF). It analyzes layouts, extracts tables, and forms the "Two-Level Indexing" structure.
-- **Tensor/Embedding Calculations**: Generates dense and sparse (ColBERTv2) vector embeddings for the chunks parsed during ETL.
-- **Async & Multi-Processing**: Built on `asyncio` to handle high-throughput I/O. GPU-bound tasks are safely managed to prevent CUDA context corruption.
-- **gRPC Client Streaming**: Receives file chunks from the Go API to handle large documents efficiently.
+**Role:** The "Structural ETL Engine."
+- **Layout-Aware Parsing**: Specializes in high-precision layout analysis using **Docling**. It decomposes complex binaries (PDF/EPUB) into structural elements (headings, tables, lists) while preserving logical hierarchies.
+- **Intelligent Chunking**: Maps the physical document layout to logical data units, passing hierarchical metadata to Go for **RAPTOR** recursive summarization and tree construction.
+- **Offloaded Tensor Operations**: Optionally handles heavy tensor-interaction tasks (e.g., **ColBERTv2** late interaction) to maintain Orchestrator responsiveness.
 
 ---
 
-## 2. Core Mechanisms
+## 2. Core Philosophy & Mechanisms
 
-### A. Two-Level Indexing (ETL Phase)
-Context is preserved by extracting global Document Metadata and attaching it to every finely divided `Chunk`. This enables strict pre-filtering during retrieval.
+### A. Strict Separation of Concerns
+We enforce the principle that the ML Worker is for **Data Extraction**, while the Go Orchestrator is for **Intelligence**. 
+- Heavy model inference is centralized in Go.
+- Python is strictly offloaded to CPU/GPU-intensive layout analysis and chunking.
 
-### B. Multi-Engine Fusion Retrieval (Retrieval Phase)
-The Go Orchestrator executes three engines asynchronously in parallel:
-1. **LightRAG (Neo4j Graph)**: Excels at multi-hop reasoning and entity relationships.
-2. **RAPTOR (Qdrant Tree)**: Excels at macro summarization across chapters.
-3. **ColBERTv2 (Qdrant Tensor)**: Excels at exact, microscopic token matching.
+### B. Synergy of BookRAG & LightRAG
+1. **Hierarchical Knowledge Graph**: Neo4j stores not just entities, but a **Hierarchical Document Tree**. These are interlinked via **GT-Links** (Graph-Tree Links), allowing the system to traverse from abstract themes to specific mentions seamlessly.
+2. **Incremental Graph Updates**: New knowledge is integrated via **Union-based incremental updates** (LightRAG style), allowing for seamless library expansion without the overhead of global re-indexing or community re-computation.
+3. **Pareto-Optimal Fusion**: The Skyline Ranker merges vector similarity from **Qdrant** and graph centrality from **Neo4j**, ensuring that retrieved context is both microscopic (exact match) and macroscopic (themed context), strictly pruning noise.
 
-The results are dynamically prioritized using **Skyline Ranker (Pareto-optimal fusion)** based on relevance scores and graph centrality (ADR-006).
-
-### C. Agentic Generation (Generation Phase)
-Wraps generation in an autonomous evaluation loop (Self-RAG):
-1. **Chain-of-Retrieval (CoR)**: Decomposes complex questions into atomic sub-questions.
-2. **Retrieval Evaluation**: Validates context relevance to filter out noise.
-3. **Generation Critique**: Verifies factual support levels (Fully/Partially/No Support).
-4. **Autonomous Regeneration**: Triggers re-generation if context support is insufficient.
-
-### D. Local Model Specialization (Ollama)
-To ensure high performance while running locally, the system decouples heavy reasoning from specialized embedding tasks:
-- **Reasoning/Logic**: `llama3` is the default for intent detection and keyword extraction.
-- **Embeddings**: `nomic-embed-text` is recommended for high-dimensional vector accuracy (ADR-007).
+### C. Agentic Evaluation (Self-RAG)
+The generation phase is wrapped in an autonomous verification loop:
+1. **Context Filtering**: Evaluates retrieved chunks for "relevance" before generation.
+2. **Support Level Critique**: Validates if the answer is **Fully Supported**, **Partially Supported**, or has **No Support** in the retrieved context.
+3. **Healing Mechanism**: Triggers re-generation or broader retrieval if support is inadequate.
 
 ---
 
-## 3. Technology Stack
+## 3. Infrastructure & Tech Stack
 
-- **Languages:** Go 1.25+ (API), Python 3.12+ (Worker)
-- **Communication:** gRPC / Protocol Buffers (`proto/booksage/v1/`)
-- **Databases:** Qdrant (Vector/Tensor), Neo4j (Graph)
-- **Deployment:** Docker Compose, MicroK8s
+- **Databases**:
+    - **Qdrant** (Vector Store for Dense/ColBERTv2 embeddings and RAPTOR summaries)
+    - **Neo4j** (Graph Store for Entities, Relations, and Hierarchical Trees)
+    - **SQLite** (Relational Store for Saga state management and idempotency)
+- **Models**: 
+    - **Local**: Ollama (Embeddings/Reasoning)
+    - **Cloud**: Gemini (Advanced reasoning & Agentic loops)
+- **Deployment**: Containerized via Docker / Kubernetes

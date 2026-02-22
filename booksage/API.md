@@ -23,7 +23,7 @@ For all REST API endpoints, 4xx and 5xx errors adopt the standardized RFC 7807 P
 ```
 
 ### 1.1 `POST /api/v1/query`
-**Description:** Submits a query to the BookSage Agentic Generation Engine for an answer based on ingested books. The system uses Chain-of-Retrieval and Multi-Engine Fusion Retrieval to gather context, and Self-RAG for generation.
+**Description:** Submits a query to the BookSage Agentic Generation Engine for an answer based on ingested books. The system uses **Dual-level Retrieval** (Entities + Themes) and **Skyline Ranker** (Pareto-optimal fusion) to gather high-precision context, encapsulated in a **Self-RAG** evaluation loop.
 
 **Request Body:**
 ```json
@@ -42,11 +42,11 @@ Streams Server-Sent Events (SSE) detailing the reasoning trace, sources, and fin
 **Event Format (JSON payloads per event):**
 ```json
 {
-  "type": "reasoning", // "Analyzing complexity", "Decomposed", "Filtering irrelevant"
+  "type": "reasoning", // "Analyzing complexity", "Extracting Keywords", "Evaluating Relevance", "Critiquing Support"
   "content": "Analyzing query complexity..."
 }
 {
-  "type": "source",    // Retrieval source metadata
+  "type": "source",    // Retrieval source metadata (Graph, Vector, or RAPTOR)
   "content": "[RAPTOR] (score: 0.95) Chapter 1 Summary..."
 }
 {
@@ -66,21 +66,20 @@ Streams Server-Sent Events (SSE) detailing the reasoning trace, sources, and fin
 ```json
 {
   "saga_id": 42,
-  "status": "processing",
+  "status": "pending",
   "hash": "sha256-hex-string"
 }
 ```
 
 ### 1.3 `GET /api/v1/ingest/status?hash={sha256}`
-**Description:** Checks the ingestion status of a previously uploaded document using its SHA-256 hash.
+**Description:** Checks the ingestion status of a previously uploaded document using its SHA-256 hash. This endpoint queries the **SQLite Saga Store** for idempotency and step-by-step progress.
 
 **Response (200 OK):**
 ```json
 {
-  "saga_id": 42,
   "document_id": "doc-uuid",
   "status": "completed", // pending, processing, completed, failed
-  "current_step": "vector_indexing",
+  "current_step": "persistence", // parsing, embedding, persistence
   "updated_at": 1708600000
 }
 ```

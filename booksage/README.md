@@ -10,12 +10,12 @@ The high-performance gateway and orchestration engine for the BookSage RAG syste
 
 ### Key Responsibilities
 
-- **API Gateway**: Provides the primary interface (REST/SSE) for user interactions, with middleware stack (Request ID, Structured Logging, Panic Recovery).
-- **SOTA Agentic Loop (CoR & Self-RAG)**: Orchestrates reasoning via Chain-of-Retrieval (CoR), critiques retrieval relevance, and validates factual grounding via Support Level evaluation.
-- **Advanced Fusion Retrieval**: Executes parallel queries across Neo4j (Graph) and Qdrant (Vector) with **Skyline Ranker (Pareto-optimal)** and weighted RRF.
-- **Dual-Model LLM Router**: Intelligently dispatches tasks between local models (separate LLM and Embedding clients) and Gemini.
-- **Reliable Ingestion Saga**: Implements a SagaOrchestrator for idempotent, hash-based document processing across multiple databases.
-- **Resilience**: Circuit Breaker pattern, graceful shutdown, and health/readiness probes.
+- **API Gateway**: Serving high-performance REST and SSE endpoints for real-time reasoning traces.
+- **SOTA Agentic Loop (Dual-level Retrieval)**: Implements LightRAG-inspired keyword extraction — identifying **Low-level (Entities)** and **High-level (Themes)** in a single pass for parallel search.
+- **Advanced Fusion (Skyline Ranker)**: Merges Vector and Graph search results using **Pareto-optimal** ranking (BookRAG) to eliminate noise and ensure structural relevance.
+- **Local Intelligence (Ollama)**: Directly manages **Embedding Generation** and **Entity Extraction** via local Ollama APIs, offloading ML logic from the Python worker.
+- **Reliable Ingestion Saga (SQLite)**: Orchestrates asynchronous pipelines using the **Saga Pattern** with an internal **SQLite** store for hash-based deduplication and state persistence.
+- **Resilience**: Integrated Circuit Breakers, graceful shutdown, and Kubernetes-native health/readiness probes.
 - **gRPC Client**: Manages communication with the Python ML Worker via **gRPC Client Streaming**.
 
 ### Configuration
@@ -45,10 +45,10 @@ The dedicated ML/ETL backend for the BookSage system. This worker is responsible
 
 ### Key Responsibilities
 
-- **ETL (Document Parsing)**: High-speed PDF/EPUB parsing using `Docling` and `PyMuPDF`.
-- **Intelligent Chunking**: Implements layout-aware chunking and Two-Level Indexing (Document & Chunk layers).
-- **Embedding Generation**: Processes dense and sparse (ColBERT) vector generations.
-- **gRPC Server**: A robust server that accepts parsing and embedding requests from the Go gateway.
+- **Structured ETL (Docling)**: High-precision layout analysis of PDFs and EPUBs, extracting tables, headings, and logical hierarchies.
+- **Intelligent Chunking**: Layout-aware chunking that preserves context and maps structural metadata for Go-side **RAPTOR** summarization.
+- **Hybrid Tensor Generation**: Offloads GPU-intensive tensor tasks (e.g., **ColBERTv2**) when required, keeping the core orchestrator lightweight.
+- **gRPC Server**: High-throughput streaming backend for document ingestion.
 
 ### Setup & Development
 
@@ -61,4 +61,5 @@ The dedicated ML/ETL backend for the BookSage system. This worker is responsible
 - **gRPC Client Streaming**: To avoid memory spikes from receiving massive PDF binaries over gRPC all at once, the Go Orchestrator streams the file in chunks over a persistent gRPC connection.
 - **Async I/O & CPU Offloading**: Built on the asynchronous **`grpc.aio`** API and `asyncio` for high-throughput I/O handling. To ensure the gRPC server remains responsive, all heavy CPU-bound operations (like Docling ETL) are strictly offloaded via `asyncio.get_running_loop().run_in_executor` to a `ProcessPoolExecutor`.
 - **⚠️ GPU Execution Warning**: For GPU-bound operations (like PyTorch Embedding), do **not** use the default `ProcessPoolExecutor`. Spawning new processes can corrupt the CUDA context and cause the application to freeze. GPU tasks must be managed safely using a `ThreadPoolExecutor` (which releases the GIL for native extensions) or carefully isolated process pools.
-- **Dependency Injection (DI)**: The gRPC Servicer (`BookSageWorker`) receives its dependencies (Parsers, Embedders, and Executors) via its constructor. This allows for clean separation of concerns and easy mocking during unit testing.
+- **Dependency Injection (DI)**: The gRPC Servicer receives its dependencies (Parsers and Executors) via its constructor for clean separation and testability.
+- **Incremental Graph Update**: Leveraging LightRAG principles, the system performs **Union-based incremental updates** to Neo4j, avoiding global re-computation and linking entities to trees via **GT-Links**.

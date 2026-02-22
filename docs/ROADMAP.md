@@ -57,12 +57,12 @@
 
 | タスク | コンポーネント | Status |
 |---|---|---|
-| Go Fusion: 3エンジン(Graph/RAPTOR/ColBERT)の実接続 | Go | 🟡 Graph✅ RAPTOR/ColBERT stub |
-| Python: ColBERT Late Interaction 実装 | Python | 🟡 |
-| Python: RAPTOR Tree 構築 + 検索 | Python | 🟡 |
+| Go Fusion: 3エンジン(Graph/RAPTOR/ColBERT)の実接続 | Go | ✅ |
+| Python: ColBERT Late Interaction 実装 | Python | ✅ |
+| Python: RAPTOR Tree 構築 + 検索 | Python | ✅ |
 | Go Agent: Self-RAG (Retrieval Critique → Generation Critique) | Go | ✅ |
-| Go Agent: Chain-of-Retrieval (CoR) サブクエリ分解 | Go | ✅ |
-| Intent-Driven Dynamic Fusion (Operator Pattern + Weighted RRF) | Go | ✅ |
+| Go Agent: Dual-level Retrieval (具体と抽象の抽出) | Go | ✅ |
+| Intent-Driven Dynamic Fusion (Operator Pattern + Skyline Ranker) | Go | ✅ |
 
 **完了基準**: 複合質問 → 意図分類 → 重み付きFusion → 自己評価 → 高品質回答。
 

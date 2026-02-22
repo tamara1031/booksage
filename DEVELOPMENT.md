@@ -68,22 +68,20 @@ Ensure you add your actual API keys (e.g., `SAGE_GEMINI_API_KEY`) to the `.env` 
 | `SAGE_WORKER_ADDR` | `worker:50051` | gRPC address of the Python ML Worker |
 | `SAGE_GEMINI_API_KEY` | *(none)* | Google Gemini API key |
 | `SAGE_OLLAMA_HOST` | `http://ollama:11434` | Ollama LLM host |
-| `SAGE_OLLAMA_MODEL` | `llama3` | Ollama model name |
+| `SAGE_OLLAMA_LLM_MODEL` | `llama3` | Local LLM for light tasks (intent/keywords) |
+| `SAGE_OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Dedicated model for high-quality embeddings |
 | `SAGE_USE_LOCAL_ONLY_LLM` | `false` | Route all LLM tasks to local Ollama |
 | `SAGE_QDRANT_HOST` | `qdrant` | Qdrant vector DB host |
 | `SAGE_QDRANT_PORT` | `6334` | Qdrant gRPC port |
-| `SAGE_QDRANT_COLLECTION` | `booksage` | Qdrant collection name |
-| `SAGE_NEO4J_URI` | `neo4j://neo4j:7687` | Neo4j Bolt URI |
-| `SAGE_NEO4J_USER` | `neo4j` | Neo4j username |
-| `SAGE_NEO4J_PASSWORD` | `booksage_dev` | Neo4j password |
+| `SAGE_NEO4J_URI` | `bolt://neo4j:7687` | Neo4j Bolt URI |
 
 ## 4. Infrastructure Setup (Docker Compose)
 
-The full RAG system requires a Vector Database (Qdrant) and a Graph Database (Neo4j), alongside our microservices. We provide a consolidated Docker Compose configuration in the **repository root**.
+The full RAG system requires a Vector Database (Qdrant), a Graph Database (Neo4j), and a State Store (SQLite), alongside our microservices. 
 
 ```bash
-# Start the entire infrastructure from the root directory
-make up
+# Start the entire infrastructure and build images
+make up-build
 ```
 
 To view the logs:
@@ -99,24 +97,27 @@ docker compose logs -f
 
 ### Python Formatting & Linting (`ruff`)
 We use `ruff` to ensure code quality in the `worker` directory.
+## 5. Development Workflow
+
+### Python Testing & Linting
 ```bash
 cd booksage/worker
-uv run ruff check src/ tests/ --fix
-uv run ruff format src/ tests/
+# Run small (unit/mock) tests
+make test-worker-small
+
+# Run medium (SUT) tests
+make test-worker-medium
 ```
 
-### Go Formatting (`go fmt`)
-Use standard Go tools in the `api` and `bookscout` directories.
+### Go Testing & Formatting
 ```bash
 # For BookSage API
 cd booksage/api
-go fmt ./...
-go test ./...
+# Run small unit tests
+make test-api-small
 
-# For BookScout
-cd ../../bookscout
-go fmt ./...
-go test ./...
+# Run medium integration tests
+make test-api-medium
 ```
 
 ## 6. Architectural Overview
