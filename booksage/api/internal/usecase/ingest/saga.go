@@ -12,25 +12,29 @@ import (
 
 // SagaOrchestrator orchestrates the ingestion process ensuring consistency via the Saga pattern.
 type SagaOrchestrator struct {
-	vectorStore repository.VectorRepository
-	graphStore  repository.GraphRepository
-	docRepo     database.DocumentRepository
-	sagaRepo    database.SagaRepository
-	raptor      *RaptorBuilder
-	extractor   *GraphExtractor
-	embedder    repository.EmbeddingClient
+	vectorStore    repository.VectorRepository
+	graphStore     repository.GraphRepository
+	docRepo        database.DocumentRepository
+	sagaRepo       database.SagaRepository
+	raptor         *RaptorBuilder
+	extractor      *GraphExtractor
+	entityResolver *EntityResolver
+	graphBuilder   *GraphBuilder
+	embedder       repository.EmbeddingClient
 }
 
 // NewSagaOrchestrator creates a new ingestion orchestrator.
 func NewSagaOrchestrator(v repository.VectorRepository, g repository.GraphRepository, dr database.DocumentRepository, sr database.SagaRepository, router repository.LLMRouter, embedder repository.EmbeddingClient) *SagaOrchestrator {
 	return &SagaOrchestrator{
-		vectorStore: v,
-		graphStore:  g,
-		docRepo:     dr,
-		sagaRepo:    sr,
-		raptor:      NewRaptorBuilder(router),
-		extractor:   NewGraphExtractor(router),
-		embedder:    embedder,
+		vectorStore:    v,
+		graphStore:     g,
+		docRepo:        dr,
+		sagaRepo:       sr,
+		raptor:         NewRaptorBuilder(router),
+		extractor:      NewGraphExtractor(router),
+		entityResolver: NewEntityResolver(v, embedder),
+		graphBuilder:   NewGraphBuilder(),
+		embedder:       embedder,
 	}
 }
 
@@ -151,53 +155,21 @@ func (o *SagaOrchestrator) RunIngestionSaga(ctx context.Context, saga *models.In
 		}
 	}
 
-	// Combine all nodes for Neo4j
-	allGraphNodes := append([]map[string]any{}, graphNodes...)
-	allGraphNodes = append(allGraphNodes, treeNodes...)
-
-	// 3. Entity Linking (名寄せ) & GT-Links
-	var finalEdges []map[string]any
-
-	// Add GraphRAG relations to finalEdges
-	for _, rel := range allRelations {
-		finalEdges = append(finalEdges, map[string]any{
-			"from": fmt.Sprintf("%s-ent-%s", strID, rel.Source),
-			"to":   fmt.Sprintf("%s-ent-%s", strID, rel.Target),
-			"type": "RELATED_TO",
-			"desc": rel.Description,
-		})
-	}
+	// 3. Resolve Entities (Delegated to EntityResolver)
 	for _, ent := range allEntities {
-		entID := fmt.Sprintf("%s-ent-%s", strID, ent.Name)
-
-		// Attempt to find existing similar entity (名寄せ)
-		if o.embedder != nil {
-			vecs, err := o.embedder.Embed(ctx, []string{ent.Name})
-			if err == nil && len(vecs) > 0 {
-				matches, _ := o.vectorStore.Search(ctx, vecs[0], 1)
-				if len(matches) > 0 && matches[0].Score > 0.9 {
-					// Found a similar entity, link to it instead of creating new?
-					// In LightRAG/GraphRAG, we usually merge or link.
-					// For simplicity, we'll keep the current ID but link it to the chunk.
-					log.Printf("[Saga] Entity Linking: Matched '%s' to existing %s", ent.Name, matches[0].ID)
-				}
-			}
+		_, _, err := o.entityResolver.ResolveEntity(ctx, ent)
+		if err != nil {
+			log.Printf("[Saga] Entity resolution error for '%s': %v", ent.Name, err)
 		}
-
-		allGraphNodes = append(allGraphNodes, map[string]any{
-			"id":   entID,
-			"text": ent.Description,
-			"type": "Entity",
-			"name": ent.Name,
-		})
-
-		// GT-Link: Connect entity to the document root or chunks
-		finalEdges = append(finalEdges, map[string]any{
-			"from": entID,
-			"to":   strID, // Connect to Doc root for now
-			"type": "GT_LINK",
-		})
+		// In a fuller implementation, we would use the returned ID to link or merge.
 	}
+
+	// 4. Build Graph Elements (Delegated to GraphBuilder)
+	nodesFromBuilder, finalEdges := o.graphBuilder.BuildGraphElements(strID, allEntities, allRelations, treeNodes)
+
+	// Combine all nodes for Neo4j (Input nodes + Builder nodes)
+	allGraphNodes := append([]map[string]any{}, graphNodes...)
+	allGraphNodes = append(allGraphNodes, nodesFromBuilder...)
 
 	log.Printf("[Saga - Step Indexing] Inserting %d total graph elements into Neo4j", len(allGraphNodes))
 	if err := o.graphStore.InsertNodesAndEdges(ctx, strID, allGraphNodes, finalEdges); err != nil {

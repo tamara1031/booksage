@@ -57,3 +57,247 @@ The generation phase is wrapped in an autonomous verification loop:
     - **Local**: Ollama (Embeddings/Reasoning)
     - **Cloud**: Gemini (Advanced reasoning & Agentic loops)
 - **Deployment**: Containerized via Docker / Kubernetes
+
+---
+
+## 4. Class Design
+
+The following diagram illustrates the core components of the BookSage Ingestion Pipeline and Query Engine.
+
+```mermaid
+classDiagram
+    namespace Go_API_Orchestrator {
+        class Server {
+            +handleIngest(w, r)
+            +handleQuery(w, r)
+        }
+
+        class SagaOrchestrator {
+            +StartOrResumeIngestion(ctx, doc)
+            +RunIngestionSaga(ctx, saga, chunks)
+        }
+
+        class EntityResolver {
+            +ResolveEntity(ctx, ent)
+        }
+
+        class GraphBuilder {
+            +BuildGraphElements(docID, entities, relations, treeNodes)
+        }
+
+        class Generator {
+            +GenerateAnswer(ctx, query, stream)
+            -decomposeQuery(ctx, query)
+        }
+
+        class FusionRetriever {
+            +Retrieve(ctx, query)
+        }
+
+        class SelfRAGCritique {
+            +EvaluateRetrieval(ctx, query, doc)
+            +EvaluateGeneration(ctx, answer, context)
+        }
+
+        class LLMRouter {
+            <<interface>>
+            +RouteLLMTask(taskType)
+        }
+
+        class VectorRepository {
+            <<interface>>
+            +InsertChunks(ctx, chunks)
+            +Search(ctx, vector)
+        }
+
+        class GraphRepository {
+            <<interface>>
+            +InsertNodesAndEdges(ctx, nodes)
+        }
+    }
+
+    namespace Python_Worker {
+        class DocumentParser {
+            +parse(file_path)
+        }
+        class IDocumentParser { <<interface>> }
+        class DoclingParser { +parse_file() }
+        class EpubParser { +parse_file() }
+    }
+
+    %% Relationships
+    Server --> SagaOrchestrator : Ingest
+    Server --> Generator : Query
+
+    SagaOrchestrator --> VectorRepository
+    SagaOrchestrator --> GraphRepository
+    SagaOrchestrator --> EntityResolver
+    SagaOrchestrator --> GraphBuilder
+
+    Generator --> FusionRetriever
+    Generator --> SelfRAGCritique
+    Generator --> LLMRouter
+
+    FusionRetriever --> VectorRepository
+    FusionRetriever --> GraphRepository
+
+    DocumentParser o-- IDocumentParser
+    DoclingParser ..|> IDocumentParser
+    EpubParser ..|> IDocumentParser
+```
+
+---
+
+## 5. Sequence Diagrams
+
+### 5.1 Ingestion Flow
+This flow details the interaction between the Go API Orchestrator (Saga) and the Python Parser Worker, highlighting the refactored strict separation of concerns where business logic (resolution/building) is delegated.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Server as API Server (Go)
+    participant Saga as Saga Orchestrator (Go)
+    participant Worker as Parser Worker (Python gRPC)
+    participant Resolver as EntityResolver
+    participant Builder as GraphBuilder
+    participant VectorDB as Qdrant
+    participant GraphDB as Neo4j
+
+    User->>Server: POST /api/v1/ingest (File)
+    activate Server
+    Server->>Server: Calculate SHA-256 Hash
+    Server->>Saga: StartOrResumeIngestion(doc)
+    activate Saga
+    Saga->>Saga: Create/Check Saga Record (Pending)
+    Saga-->>Server: Saga ID
+    deactivate Saga
+
+    Server->>Worker: Stream ParseRequest (Metadata)
+    activate Worker
+    Server->>Worker: Stream ParseRequest (Chunks)
+    Worker->>Worker: DocumentParser.parse()
+    Worker-->>Server: Stream ParseResponse (Structured Chunks)
+    deactivate Worker
+
+    Server-->>User: 202 Accepted (Saga ID)
+
+    note right of Server: Async Processing Starts
+    par Async Ingestion
+        Server->>Server: Generate Embeddings (Batcher)
+        Server->>Saga: RunIngestionSaga(saga, chunks, nodes)
+        activate Saga
+
+        rect rgb(240, 248, 255)
+            note over Saga, VectorDB: Step 1: Vector Insertion
+            Saga->>VectorDB: InsertChunks()
+            alt Insertion Failed
+                Saga->>Saga: Update Status (Failed)
+                Saga-->>Server: Error
+            else Success
+                Saga->>Saga: Update Step Status (Completed)
+            end
+        end
+
+        rect rgb(255, 250, 240)
+            note over Saga, GraphDB: Step 2: Indexing (RAPTOR & GraphRAG)
+            Saga->>Saga: RaptorBuilder.BuildTree()
+            Saga->>Saga: GraphExtractor.ExtractEntities()
+
+            loop Entity Resolution
+                Saga->>Resolver: ResolveEntity(ent)
+                Resolver-->>Saga: Match ID / False
+            end
+
+            Saga->>Builder: BuildGraphElements(nodes, relations)
+            Builder-->>Saga: Neo4j Payload
+
+            Saga->>GraphDB: InsertNodesAndEdges()
+
+            alt Graph Insertion Failed
+                Saga->>VectorDB: DeleteDocument (Compensating Transaction)
+                Saga->>Saga: Update Status (Failed)
+                Saga-->>Server: Error
+            else Success
+                Saga->>Saga: Update Status (Completed)
+            end
+        end
+        deactivate Saga
+    end
+    deactivate Server
+```
+
+### 5.2 RAG Generation Flow
+This flow visualizes the advanced Chain-of-Retrieval (CoR), Fusion Retrieval, and Self-RAG critique loops.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Server as API Server (SSE)
+    participant Gen as Generator (Agentic RAG)
+    participant Ret as FusionRetriever
+    participant Crit as SelfRAGCritique
+    participant LLM as LLM Router (Gemini/Ollama)
+    participant DB as Vector/Graph DBs
+
+    User->>Server: POST /api/v1/query (JSON)
+    activate Server
+    Server->>Gen: GenerateAnswer(ctx, query, stream)
+    activate Gen
+
+    %% Step 1: CoR Decomposition
+    Gen->>Server: Stream Event (Reasoning: "Analyzing...")
+    Gen->>LLM: Generate(Prompt: Decompose Query)
+    LLM-->>Gen: Sub-Queries [Q1, Q2...]
+
+    loop For Each Sub-Query
+        Gen->>Server: Stream Event (Reasoning: "Searching Qx")
+
+        %% Step 2: Fusion Retrieval
+        Gen->>Ret: Retrieve(Qx)
+        activate Ret
+        Ret->>DB: Vector Search (Dense)
+        Ret->>DB: Graph Traversal (Sparse)
+        Ret-->>Gen: Candidates [C1, C2...]
+        deactivate Ret
+
+        %% Step 3: Retrieval Critique
+        loop For Each Candidate
+            Gen->>Crit: EvaluateRetrieval(Qx, C_content)
+            activate Crit
+            Crit-->>Gen: Relevant (Bool)
+            deactivate Crit
+
+            alt Is Relevant
+                Gen->>Server: Stream Event (Source: C_metadata)
+                Gen->>Gen: Add to Context
+            else Irrelevant
+                Gen->>Server: Stream Event (Reasoning: "Filtered...")
+            end
+        end
+    end
+
+    %% Step 4: Generation
+    Gen->>Server: Stream Event (Reasoning: "Generating...")
+    Gen->>LLM: Generate(Prompt: Context + Query)
+    LLM-->>Gen: Draft Answer
+
+    %% Step 5: Generation Critique
+    Gen->>Crit: EvaluateGeneration(Answer, Context)
+    activate Crit
+    Crit-->>Gen: Support Level (Fully/Partially/None)
+    deactivate Crit
+
+    alt No Support
+        Gen->>Server: Stream Event (Reasoning: "Regenerating...")
+        Gen->>LLM: Generate(Prompt: Strict Context Constraint)
+        LLM-->>Gen: Final Answer
+    end
+
+    Gen->>Server: Stream Event (Answer: Final Content)
+    deactivate Gen
+    Server-->>User: Close Stream
+    deactivate Server
+```
