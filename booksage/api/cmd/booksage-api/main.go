@@ -10,17 +10,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/booksage/booksage-api/internal/agent"
 	"github.com/booksage/booksage-api/internal/config"
 	"github.com/booksage/booksage-api/internal/database/bunstore"
+	"github.com/booksage/booksage-api/internal/domain/repository"
 	"github.com/booksage/booksage-api/internal/embedding"
-	"github.com/booksage/booksage-api/internal/fusion"
-	"github.com/booksage/booksage-api/internal/ingest"
-	"github.com/booksage/booksage-api/internal/llm"
-	neo4jpkg "github.com/booksage/booksage-api/internal/neo4j"
+	"github.com/booksage/booksage-api/internal/infrastructure/llm"
+	neo4jpkg "github.com/booksage/booksage-api/internal/infrastructure/neo4j"
+	qdrantpkg "github.com/booksage/booksage-api/internal/infrastructure/qdrant"
+	httpserver "github.com/booksage/booksage-api/internal/interface/http"
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
-	qdrantpkg "github.com/booksage/booksage-api/internal/qdrant"
-	"github.com/booksage/booksage-api/internal/server"
+	"github.com/booksage/booksage-api/internal/usecase/ingest"
+	"github.com/booksage/booksage-api/internal/usecase/query"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"github.com/uptrace/bun/driver/sqliteshim"
 	"google.golang.org/grpc"
@@ -48,7 +48,7 @@ func main() {
 
 	ctx := context.Background()
 
-	var geminiClient llm.LLMClient
+	var geminiClient repository.LLMClient
 	if !cfg.UseLocalOnlyLLM {
 		if cfg.GeminiAPIKey == "" {
 			log.Fatalf("[Error] BS_GEMINI_API_KEY is not set and BS_USE_LOCAL_ONLY_LLM is false. Cannot start Orchestrator.")
@@ -73,9 +73,6 @@ func main() {
 	llmRouter := llm.NewRouter(localClient, geminiClient)
 	log.Printf("[System] 🛤️  LLM Router initialized (Cloud: %s | Local: %s)",
 		geminiClient.Name(), localClient.Name())
-
-	// NOTE: Generator will be initialized after DB clients so we can inject the retriever.
-	// See below after Qdrant/Neo4j initialization.
 
 	// Initialize gRPC clients
 	parserClient := pb.NewDocumentParserServiceClient(conn)
@@ -107,19 +104,20 @@ func main() {
 	}
 	defer func() { _ = neo4jClient.Close(ctx) }()
 
-	sagaOrchestrator := ingest.NewOrchestrator(qdrantClient, neo4jClient, bunStore, bunStore)
+	// Saga Orchestrator (DDD Usecase)
+	sagaOrchestrator := ingest.NewSagaOrchestrator(qdrantClient, neo4jClient, bunStore, bunStore)
 
-	// Initialize the Fusion Retriever (Qdrant + Neo4j + Embedding)
-	fusionRetriever := fusion.NewFusionRetriever(qdrantClient, neo4jClient, embedBatcher)
+	// Initialize the Fusion Retriever (DDD Usecase)
+	fusionRetriever := query.NewFusionRetriever(qdrantClient, neo4jClient, embedBatcher)
 
-	// Inject the Router and Retriever into the Agentic Generator
-	generator := agent.NewGenerator(llmRouter, fusionRetriever)
+	// Inject the Router and Retriever into the Agentic Generator (DDD Usecase)
+	generator := query.NewGenerator(llmRouter, fusionRetriever)
 
 	// ==========================================
 	// Initialize and Start HTTP Server
 	// ==========================================
 
-	apiServer := server.NewServer(generator, embedBatcher, parserClient, sagaOrchestrator)
+	apiServer := httpserver.NewServer(generator, embedBatcher, parserClient, sagaOrchestrator)
 	handler := apiServer.RegisterRoutes()
 
 	// ==========================================
