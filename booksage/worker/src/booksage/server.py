@@ -74,7 +74,6 @@ class DocumentParser:
         }
 
 
-
 # ============================================================================
 # gRPC Servicer Implementation
 # ============================================================================
@@ -187,7 +186,6 @@ class BookSageWorker(booksage_pb2_grpc.DocumentParserServiceServicer):
             await context.abort(grpc.StatusCode.INTERNAL, f"Error reading stream: {e}")
 
         return metadata, file_chunks
-
 
 
 # ============================================================================
