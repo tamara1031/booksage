@@ -34,7 +34,7 @@ func TestRaptorBuilder_BuildTree(t *testing.T) {
 	}
 
 	// Act
-	nodes, edges, err := builder.BuildTree(context.Background(), "doc1", chunks)
+	nodes, _, err := builder.BuildTree(context.Background(), "doc1", chunks)
 
 	// Assert
 	if err != nil {
@@ -44,7 +44,5 @@ func TestRaptorBuilder_BuildTree(t *testing.T) {
 	if len(nodes) < 2 {
 		t.Errorf("expected at least 2 tree nodes, got %d", len(nodes))
 	}
-	if len(edges) != 0 {
-		// In the current lightweight version, edges are omitted or simplified
-	}
+	// In the current lightweight version, edges are omitted or simplified
 }
