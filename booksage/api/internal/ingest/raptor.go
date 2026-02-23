@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-
 )
 
 // RaptorNode represents a node in the RAPTOR summary tree.

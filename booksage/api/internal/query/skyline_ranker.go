@@ -3,7 +3,6 @@ package query
 import (
 	"log"
 	"sort"
-
 )
 
 // SkylineRanker implements Pareto-optimal fusion (BookRAG).

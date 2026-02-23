@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"github.com/booksage/booksage-api/internal/platform/conf"
+	"github.com/booksage/booksage-api/internal/conf"
 	"github.com/booksage/booksage-api/internal/platform/server"
 )
 

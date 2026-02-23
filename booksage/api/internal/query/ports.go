@@ -1,7 +1,6 @@
 package query
 
 import (
-
 	"github.com/booksage/booksage-api/internal/ports"
 )
 

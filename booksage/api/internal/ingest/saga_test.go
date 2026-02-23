@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
 )
 
 type mockQdrant struct {

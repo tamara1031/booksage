@@ -3,7 +3,6 @@ package ingest
 import (
 	"context"
 	"testing"
-
 )
 
 type mockLLMClient struct {

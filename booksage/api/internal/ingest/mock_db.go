@@ -3,7 +3,6 @@ package ingest
 import (
 	"context"
 	"log"
-
 )
 
 // MockQdrantClient provides a simple mock of the vector DB for Saga testing

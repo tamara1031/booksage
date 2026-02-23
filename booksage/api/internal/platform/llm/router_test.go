@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/booksage/booksage-api/internal/ports"
 	"github.com/booksage/booksage-api/internal/platform/llm"
+	"github.com/booksage/booksage-api/internal/ports"
 )
 
 // mockClient implements the ports.LLMClient interface for testing.

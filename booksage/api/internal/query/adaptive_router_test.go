@@ -3,7 +3,6 @@ package query
 import (
 	"context"
 	"testing"
-
 )
 
 type mockLLMClient struct {

@@ -98,15 +98,15 @@ func TestRoutes(t *testing.T) {
 
 // Ensure handleQuery handles invalid json
 func TestHandleQuery_InvalidJSON(t *testing.T) {
-    handler := createTestHandler()
-    ts := httptest.NewServer(handler)
-    defer ts.Close()
+	handler := createTestHandler()
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
 
-    resp, err := http.Post(ts.URL+"/api/v1/query", "application/json", strings.NewReader("{invalid"))
-    if err != nil {
-        t.Fatalf("Query failed: %v", err)
-    }
-    if resp.StatusCode != 400 {
-        t.Errorf("Query expected 400, got %d", resp.StatusCode)
-    }
+	resp, err := http.Post(ts.URL+"/api/v1/query", "application/json", strings.NewReader("{invalid"))
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if resp.StatusCode != 400 {
+		t.Errorf("Query expected 400, got %d", resp.StatusCode)
+	}
 }

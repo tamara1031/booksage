@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-
 )
 
 // Generator is responsible for the Agentic RAG Generation loop (CoR, Self-RAG).

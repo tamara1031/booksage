@@ -39,20 +39,20 @@ func (o *SagaOrchestrator) StartOrResumeIngestion(ctx context.Context, doc *Docu
 	// 1. Check if document exists by hash
 	existingDoc, err := o.docRepo.GetDocumentByHash(ctx, doc.FileHash)
 	if err != nil && err.Error() != "record not found" { // Assuming ErrNotFound maps to this string or check error type
-        // Wait, ErrNotFound was database.ErrNotFound.
-        // I need to define ErrNotFound in ingest/ports.go or handle it.
-        // Or assume repo returns nil, nil for not found?
-        // Let's assume err != nil means error.
-        // For now, I'll use strict error check if I can define it.
-        // Or just check if existingDoc is nil.
+		// Wait, ErrNotFound was database.ErrNotFound.
+		// I need to define ErrNotFound in ingest/ports.go or handle it.
+		// Or assume repo returns nil, nil for not found?
+		// Let's assume err != nil means error.
+		// For now, I'll use strict error check if I can define it.
+		// Or just check if existingDoc is nil.
 		return nil, err
 	}
-    // If error is "record not found", existingDoc is nil.
-    // I need to know how bunstore behaves.
-    // Usually it returns error.
-    // I will add `var ErrNotFound = errors.New("record not found")` to ports.go?
-    // And update bunstore to return it?
-    // Or just check error string for now to be safe.
+	// If error is "record not found", existingDoc is nil.
+	// I need to know how bunstore behaves.
+	// Usually it returns error.
+	// I will add `var ErrNotFound = errors.New("record not found")` to ports.go?
+	// And update bunstore to return it?
+	// Or just check error string for now to be safe.
 
 	if existingDoc != nil {
 		// Document exists, check for existing saga
@@ -232,8 +232,8 @@ func (o *SagaOrchestrator) GetDocumentStatus(ctx context.Context, hash []byte) (
 	}
 	if doc == nil {
 		// return nil, database.ErrNotFound
-        // Use standard error or custom
-        return nil, fmt.Errorf("record not found")
+		// Use standard error or custom
+		return nil, fmt.Errorf("record not found")
 	}
 	return o.sagaRepo.GetLatestSagaByDocumentID(ctx, doc.ID)
 }

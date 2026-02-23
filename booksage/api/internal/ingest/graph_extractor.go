@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-
 )
 
 // Entity represents a named entity extracted from text.

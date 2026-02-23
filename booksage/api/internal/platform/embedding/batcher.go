@@ -6,8 +6,8 @@ import (
 	"log"
 	"sync"
 
-	"github.com/booksage/booksage-api/internal/ports"
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
+	"github.com/booksage/booksage-api/internal/ports"
 )
 
 // Batcher handles safely chunking embedding requests to respect memory limits.

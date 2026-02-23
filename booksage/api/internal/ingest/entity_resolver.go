@@ -3,7 +3,6 @@ package ingest
 import (
 	"context"
 	"log"
-
 )
 
 // EntityResolver handles entity linking and resolution.

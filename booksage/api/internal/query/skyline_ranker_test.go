@@ -2,7 +2,6 @@ package query
 
 import (
 	"testing"
-
 )
 
 func TestSkylineRanker_Pareto(t *testing.T) {

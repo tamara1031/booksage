@@ -13,7 +13,7 @@ import (
 	"github.com/booksage/booksage-api/internal/api"
 	"github.com/booksage/booksage-api/internal/ingest"
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
-	"github.com/booksage/booksage-api/internal/platform/conf"
+	"github.com/booksage/booksage-api/internal/conf"
 	"github.com/booksage/booksage-api/internal/platform/database/bunstore"
 	"github.com/booksage/booksage-api/internal/platform/embedding"
 	"github.com/booksage/booksage-api/internal/platform/llm"
