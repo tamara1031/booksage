@@ -71,11 +71,11 @@ func (a *BookSageAPIAdapter) Send(ctx context.Context, book domain.BookMetadata,
 			return
 		}
 
-        // Write trailing boundary
-        if err := writer.Close(); err != nil {
-             pw.CloseWithError(fmt.Errorf("close multipart writer: %w", err))
-             return
-        }
+		// Write trailing boundary
+		if err := writer.Close(); err != nil {
+			pw.CloseWithError(fmt.Errorf("close multipart writer: %w", err))
+			return
+		}
 	}()
 
 	url := fmt.Sprintf("%s/ingest", a.baseURL)

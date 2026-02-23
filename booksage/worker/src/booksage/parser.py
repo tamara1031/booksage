@@ -1,7 +1,6 @@
 import logging
 import os
 import uuid
-from typing import Dict
 
 from booksage.models import DocumentMetadata, ExtractedElement, RawDocument
 
@@ -62,7 +61,9 @@ class DoclingParser:
             elements.extend(
                 [
                     ExtractedElement(content="# Mock Root", type="heading", level=1, page_number=1),
-                    ExtractedElement(content="Mock paragraph.", type="text", level=0, page_number=1),
+                    ExtractedElement(
+                        content="Mock paragraph.", type="text", level=0, page_number=1
+                    ),
                 ]
             )
             extra_meta["status"] = "mock_success"
@@ -102,9 +103,7 @@ class EpubParser:
                         chapter_num += 1
         except ImportError:
             logger.warning(f"EPUB libs not installed, using mock for {file_path}")
-            elements.append(
-                ExtractedElement(content="Mock EPUB text.", type="text", page_number=1)
-            )
+            elements.append(ExtractedElement(content="Mock EPUB text.", type="text", page_number=1))
             extra_meta["status"] = "mock_success"
 
         return RawDocument(
@@ -119,6 +118,7 @@ class PyMuPDFParser:
     def parse_file(self, file_path: str, metadata: DocumentMetadata) -> RawDocument:
         """Parse PDF using PyMuPDF."""
         import fitz
+
         elements = []
         extra_meta = {"status": "success", "parser": "pymupdf"}
         doc_id = str(uuid.uuid4())
@@ -154,7 +154,7 @@ class DocumentParser:
             ".epub": EpubParser(),
         }
 
-    def parse(self, file_path: str, file_type: str, document_id: str) -> Dict:
+    def parse(self, file_path: str, file_type: str, document_id: str) -> dict:
         """Main entry point for parsing a file."""
         _, ext = os.path.splitext(file_path)
         ext = ext.lower()

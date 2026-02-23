@@ -26,14 +26,7 @@ dependencies = [
     "neo4j>=5.17.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.5",
-    "pytest-mock>=3.12.0",
-    "ruff>=0.3.0",
-    "mypy>=1.9.0",
-]
+# Dev dependencies moved to dependency-groups
 
 [build-system]
 requires = ["hatchling"]
@@ -69,5 +62,10 @@ pythonpath = ["src"]
 
 [dependency-groups]
 dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.5",
+    "pytest-mock>=3.12.0",
     "pytest-cov>=7.0.0",
+    "ruff>=0.3.0",
+    "mypy>=1.9.0",
 ]

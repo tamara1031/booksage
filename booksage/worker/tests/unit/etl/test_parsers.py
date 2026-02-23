@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
-from booksage.parser import DoclingParser, PyMuPDFParser
 from booksage.models import DocumentMetadata
+from booksage.parser import DoclingParser, PyMuPDFParser
 
 
 def test_pymupdf_fallback():
