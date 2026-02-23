@@ -30,13 +30,6 @@ type TensorEngine interface {
 	Rerank(ctx context.Context, query string, documents []string) ([]float32, error)
 }
 
-// EmbeddingClient defines the interface for generating embeddings.
-// Deprecated: Use TensorEngine instead.
-type EmbeddingClient interface {
-	Embed(ctx context.Context, texts []string) ([][]float32, error)
-	Name() string
-}
-
 // LLMRouter defines the interface for routing tasks.
 type LLMRouter interface {
 	RouteLLMTask(task TaskType) LLMClient

@@ -27,14 +27,6 @@ func (r *Router) GetLocalClient() ports.LLMClient {
 	return r.localLLMClient
 }
 
-// RouteEmbeddingTask returns a client capable of generating embeddings.
-func (r *Router) RouteEmbeddingTask(task string) ports.EmbeddingClient {
-	if ec, ok := r.localEmbedClient.(ports.EmbeddingClient); ok {
-		return ec
-	}
-	return nil
-}
-
 // RouteLLMTask evaluates the cognitive load required and routes to the optimal backend (ADR-006).
 func (r *Router) RouteLLMTask(task ports.TaskType) ports.LLMClient {
 	var selected ports.LLMClient
@@ -42,6 +34,7 @@ func (r *Router) RouteLLMTask(task ports.TaskType) ports.LLMClient {
 
 	switch task {
 	case ports.TaskEmbedding:
+		// Embedding task routed to localEmbedClient, though actual embedding is done via TensorEngine now.
 		selected = r.localEmbedClient
 		icon = "🏎️ [Embed]"
 	case ports.TaskSimpleKeywordExtraction:

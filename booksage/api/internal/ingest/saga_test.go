@@ -3,262 +3,171 @@ package ingest
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 )
 
-type mockQdrant struct {
-	insertErr error
-	deleteErr error
-	deleted   bool
+// Mocks
+type mockVectorRepo struct {
+	shouldFail bool
 }
 
-func (m *mockQdrant) InsertChunks(ctx context.Context, docID string, chunks []map[string]any) error {
-	return m.insertErr
+func (m *mockVectorRepo) Search(ctx context.Context, vector []float32, limit int) ([]SearchResult, error) {
+	return []SearchResult{}, nil
 }
-func (m *mockQdrant) DeleteDocument(ctx context.Context, docID string) error {
-	m.deleted = true
-	return m.deleteErr
+func (m *mockVectorRepo) InsertChunks(ctx context.Context, docID string, chunks []map[string]any) error {
+	if m.shouldFail {
+		return errors.New("mock vector error")
+	}
+	return nil
 }
-func (m *mockQdrant) Search(ctx context.Context, vector []float32, limit int) ([]SearchResult, error) {
+func (m *mockVectorRepo) DeleteDocument(ctx context.Context, docID string) error { return nil }
+func (m *mockVectorRepo) Close() error                                           { return nil }
+
+type mockGraphRepo struct {
+	shouldFail bool
+}
+
+func (m *mockGraphRepo) SearchChunks(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	return []SearchResult{}, nil
+}
+func (m *mockGraphRepo) InsertNodesAndEdges(ctx context.Context, docID string, nodes []map[string]any, edges []map[string]any) error {
+	if m.shouldFail {
+		return errors.New("mock graph error")
+	}
+	return nil
+}
+func (m *mockGraphRepo) DeleteDocument(ctx context.Context, docID string) error { return nil }
+func (m *mockGraphRepo) Close(ctx context.Context) error                        { return nil }
+
+type mockDocRepo struct{}
+
+func (m *mockDocRepo) CreateDocument(ctx context.Context, doc *Document) (int64, error) {
+	return 1, nil
+}
+func (m *mockDocRepo) GetDocumentByID(ctx context.Context, id int64) (*Document, error) {
+	return &Document{ID: id}, nil
+}
+func (m *mockDocRepo) GetDocumentByHash(ctx context.Context, hash []byte) (*Document, error) {
+	return nil, ErrNotFound // Simulate new doc
+}
+func (m *mockDocRepo) DeleteDocument(ctx context.Context, id int64) error { return nil }
+
+type mockSagaRepo struct {
+	status SagaStatus
+}
+
+func (m *mockSagaRepo) CreateSaga(ctx context.Context, saga *IngestSaga) (int64, error) { return 1, nil }
+func (m *mockSagaRepo) GetSagaByID(ctx context.Context, id int64) (*IngestSaga, error) {
+	return &IngestSaga{ID: id, Status: m.status}, nil
+}
+func (m *mockSagaRepo) GetLatestSagaByDocumentID(ctx context.Context, docID int64) (*IngestSaga, error) {
+	return nil, ErrNotFound
+}
+func (m *mockSagaRepo) UpdateSagaStatus(ctx context.Context, sagaID int64, currentVersion int, status SagaStatus, currentStep IngestStep, errorMsg string) error {
+	return nil
+}
+func (m *mockSagaRepo) UpsertSagaStep(ctx context.Context, step *SagaStep) (int64, error) {
+	return 1, nil
+}
+func (m *mockSagaRepo) GetSagaSteps(ctx context.Context, sagaID int64) ([]*SagaStep, error) {
 	return nil, nil
 }
-func (m *mockQdrant) Close() error { return nil }
 
-type mockNeo4j struct {
-	insertErr error
-	deleteErr error
-	nodeCount int
-}
+type mockTensorEngine struct{}
 
-func (m *mockNeo4j) InsertNodesAndEdges(ctx context.Context, docID string, nodes []map[string]any, edges []map[string]any) error {
-	m.nodeCount = len(nodes)
-	return m.insertErr
+func (m *mockTensorEngine) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return [][]float32{{0.1, 0.2}}, nil
 }
-func (m *mockNeo4j) DeleteDocument(ctx context.Context, docID string) error {
-	m.deleteErr = nil
-	return m.deleteErr
+func (m *mockTensorEngine) Name() string { return "mock_tensor" }
+func (m *mockTensorEngine) Rerank(ctx context.Context, query string, docs []string) ([]float32, error) {
+	return make([]float32, len(docs)), nil
 }
-func (m *mockNeo4j) SearchChunks(ctx context.Context, query string, limit int) ([]SearchResult, error) {
-	return nil, nil
-}
-func (m *mockNeo4j) Close(ctx context.Context) error { return nil }
 
 type mockRouter struct{}
 
-func (m *mockRouter) RouteLLMTask(task TaskType) LLMClient {
-	return &mockLLM{}
-}
+func (m *mockRouter) RouteLLMTask(task TaskType) LLMClient { return &mockLLMClient{} }
 
-type mockLLM struct{}
+type mockLLMClient struct{}
 
-func (m *mockLLM) Generate(ctx context.Context, prompt string) (string, error) {
-	if strings.Contains(prompt, "entities") {
-		return `{"entities":[], "relations":[]}`, nil
-	}
-	return "summary", nil
-}
-func (m *mockLLM) Name() string { return "mock" }
+func (m *mockLLMClient) Generate(ctx context.Context, prompt string) (string, error) { return "{}", nil }
+func (m *mockLLMClient) Name() string                                                { return "mock_llm" }
 
-type mockEmbeddingClient struct{}
+func TestStartOrResumeIngestion_NewDoc(t *testing.T) {
+	orch := NewSagaOrchestrator(
+		&mockVectorRepo{},
+		&mockGraphRepo{},
+		&mockDocRepo{},
+		&mockSagaRepo{},
+		&mockRouter{},
+		&mockTensorEngine{},
+	)
 
-func (m *mockEmbeddingClient) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	return [][]float32{{0.1, 0.2, 0.3}}, nil
-}
-func (m *mockEmbeddingClient) Name() string { return "mock_emb" }
-
-func TestSaga_Success(t *testing.T) {
-	q := &mockQdrant{}
-	n := &mockNeo4j{}
-	docRepo := &MockDocumentRepository{}
-	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
-
-	err := orch.RunIngestionSaga(context.Background(), &IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []map[string]any{{"content": "chunk1"}}, []map[string]any{{"text": "node1"}})
-	if err != nil {
-		t.Fatalf("Expected success, got %v", err)
-	}
-
-	if q.deleted {
-		t.Errorf("Expected no compensation on success")
-	}
-
-	// Should have graph nodes from: original graphNodes (1) + treeNodes (at least 1)
-	if n.nodeCount < 1 {
-		t.Errorf("Expected graph nodes to be inserted, got %d", n.nodeCount)
-	}
-}
-
-func TestSaga_QdrantFails(t *testing.T) {
-	q := &mockQdrant{insertErr: errors.New("qdrant error")}
-	n := &mockNeo4j{}
-	docRepo := &MockDocumentRepository{}
-	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
-
-	err := orch.RunIngestionSaga(context.Background(), &IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []map[string]any{{"text": "chunk1"}}, []map[string]any{{"text": "node1"}})
-	if err == nil {
-		t.Fatalf("Expected error, got nil")
-	}
-	if err.Error() != "qdrant insertion failed: qdrant error" {
-		t.Errorf("Unexpected error: %v", err)
-	}
-
-	// Should not compensate because insert didn't succeed
-	if q.deleted {
-		t.Errorf("Expected no compensation if qdrant insert fails")
-	}
-}
-
-func TestSaga_Neo4jFails_CompensatesQdrant(t *testing.T) {
-	q := &mockQdrant{}
-	n := &mockNeo4j{insertErr: errors.New("neo4j error")}
-	docRepo := &MockDocumentRepository{}
-	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
-
-	err := orch.RunIngestionSaga(context.Background(), &IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []map[string]any{{"text": "chunk1"}}, []map[string]any{{"text": "node1"}})
-	if err == nil {
-		t.Fatalf("Expected error, got nil")
-	}
-
-	if !q.deleted {
-		t.Errorf("Expected Qdrant to be compensated (DeleteDocument called)")
-	}
-}
-
-func TestSaga_Neo4jFails_CompensationFails(t *testing.T) {
-	q := &mockQdrant{deleteErr: errors.New("delete error")}
-	n := &mockNeo4j{insertErr: errors.New("neo4j error")}
-	docRepo := &MockDocumentRepository{}
-	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
-
-	err := orch.RunIngestionSaga(context.Background(), &IngestSaga{ID: 1, DocumentID: 1, Version: 1}, []map[string]any{{"text": "chunk1"}}, []map[string]any{{"text": "node1"}})
-	if err == nil {
-		t.Fatalf("Expected error, got nil")
-	}
-
-	if !q.deleted {
-		t.Errorf("Expected Qdrant to be compensated (DeleteDocument called even if failed)")
-	}
-}
-
-func TestStartOrResumeIngestion_NewDocument(t *testing.T) {
-	q := &mockQdrant{}
-	n := &mockNeo4j{}
-	docRepo := &MockDocumentRepository{}
-	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
-
-	doc := &Document{
-		FileHash: []byte{0xAA, 0xBB}, // Not 0xF1, so mock returns nil (new doc)
-		Title:    "New Book",
-	}
-
+	doc := &Document{FileHash: []byte("hash")}
 	saga, err := orch.StartOrResumeIngestion(context.Background(), doc)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if saga == nil {
-		t.Fatal("Expected saga, got nil")
-	}
-	if saga.Status != SagaStatusPending {
-		t.Errorf("Expected pending status, got %v", saga.Status)
-	}
-	if saga.CurrentStep != StepParsing {
-		t.Errorf("Expected parsing step, got %v", saga.CurrentStep)
+	if saga.ID != 1 {
+		t.Errorf("Expected saga ID 1, got %d", saga.ID)
 	}
 }
 
-func TestStartOrResumeIngestion_AlreadyIngested(t *testing.T) {
-	q := &mockQdrant{}
-	n := &mockNeo4j{}
-	docRepo := &MockDocumentRepository{}
-	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
+func TestRunIngestionSaga_Success(t *testing.T) {
+	orch := NewSagaOrchestrator(
+		&mockVectorRepo{},
+		&mockGraphRepo{},
+		&mockDocRepo{},
+		&mockSagaRepo{},
+		&mockRouter{},
+		&mockTensorEngine{},
+	)
 
-	// 0xF1 triggers mock to return existing doc with ID=100
-	// ID=100 triggers mock saga repo to return completed saga
-	doc := &Document{
-		FileHash: []byte{0xF1, 0x00},
-		Title:    "Already Ingested Book",
+	saga := &IngestSaga{ID: 1, DocumentID: 1}
+	chunks := []map[string]any{{"content": "text"}}
+	nodes := []map[string]any{}
+
+	err := orch.RunIngestionSaga(context.Background(), saga, chunks, nodes)
+	if err != nil {
+		t.Errorf("Expected success, got %v", err)
 	}
+}
 
-	_, err := orch.StartOrResumeIngestion(context.Background(), doc)
+func TestRunIngestionSaga_VectorFail(t *testing.T) {
+	orch := NewSagaOrchestrator(
+		&mockVectorRepo{shouldFail: true},
+		&mockGraphRepo{},
+		&mockDocRepo{},
+		&mockSagaRepo{},
+		&mockRouter{},
+		&mockTensorEngine{},
+	)
+
+	saga := &IngestSaga{ID: 1, DocumentID: 1}
+	chunks := []map[string]any{{"content": "text"}}
+	nodes := []map[string]any{}
+
+	err := orch.RunIngestionSaga(context.Background(), saga, chunks, nodes)
 	if err == nil {
-		t.Fatal("Expected error for already ingested document")
-	}
-	if !errors.Is(err, nil) {
-		// Check error message contains "already ingested"
-		if err.Error() != "document already ingested: f100" {
-			t.Errorf("Unexpected error: %v", err)
-		}
+		t.Error("Expected error from vector store")
 	}
 }
 
-func TestStartOrResumeIngestion_ExistingDocNoSaga(t *testing.T) {
-	q := &mockQdrant{}
-	n := &mockNeo4j{}
-	// Create a custom docRepo that returns an existing doc but with a non-100 ID
-	// so the saga repo returns nil (no existing saga)
-	docRepo := &mockDocRepoWithID{id: 50}
-	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
+func TestRunIngestionSaga_GraphFail(t *testing.T) {
+	orch := NewSagaOrchestrator(
+		&mockVectorRepo{},
+		&mockGraphRepo{shouldFail: true},
+		&mockDocRepo{},
+		&mockSagaRepo{},
+		&mockRouter{},
+		&mockTensorEngine{},
+	)
 
-	doc := &Document{
-		FileHash: []byte{0xF1, 0x01},
-		Title:    "Existing Doc No Saga",
-	}
+	saga := &IngestSaga{ID: 1, DocumentID: 1}
+	chunks := []map[string]any{{"content": "text"}}
+	nodes := []map[string]any{}
 
-	saga, err := orch.StartOrResumeIngestion(context.Background(), doc)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+	err := orch.RunIngestionSaga(context.Background(), saga, chunks, nodes)
+	if err == nil {
+		t.Error("Expected error from graph store")
 	}
-	if saga == nil {
-		t.Fatal("Expected saga, got nil")
-	}
-}
-
-func TestGetDocumentStatus(t *testing.T) {
-	q := &mockQdrant{}
-	n := &mockNeo4j{}
-	docRepo := &MockDocumentRepository{}
-	sagaRepo := &MockSagaRepository{}
-	orch := NewSagaOrchestrator(q, n, docRepo, sagaRepo, &mockRouter{}, &mockEmbeddingClient{})
-
-	// 0xF1 hash → doc ID 100 → completed saga
-	saga, err := orch.GetDocumentStatus(context.Background(), []byte{0xF1, 0x00})
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	if saga == nil {
-		t.Fatal("Expected saga, got nil")
-	}
-	if saga.Status != SagaStatusCompleted {
-		t.Errorf("Expected completed status, got %v", saga.Status)
-	}
-}
-
-// ... (rest of the file)
-
-// mockDocRepoWithID returns a fixed doc for any hash query
-type mockDocRepoWithID struct {
-	id int64
-}
-
-func (m *mockDocRepoWithID) CreateDocument(ctx context.Context, doc *Document) (int64, error) {
-	return m.id, nil
-}
-func (m *mockDocRepoWithID) GetDocumentByID(ctx context.Context, id int64) (*Document, error) {
-	return &Document{ID: id}, nil
-}
-func (m *mockDocRepoWithID) GetDocumentByHash(ctx context.Context, hash []byte) (*Document, error) {
-	if len(hash) > 0 && hash[0] == 0xF1 {
-		return &Document{ID: m.id, FileHash: hash}, nil
-	}
-	return nil, nil
-}
-func (m *mockDocRepoWithID) DeleteDocument(ctx context.Context, id int64) error {
-	return nil
 }

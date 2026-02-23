@@ -15,7 +15,6 @@ import (
 	"github.com/booksage/booksage-api/internal/ingest"
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
 	"github.com/booksage/booksage-api/internal/platform/database/bunstore"
-	"github.com/booksage/booksage-api/internal/platform/embedding"
 	"github.com/booksage/booksage-api/internal/platform/infinity"
 	"github.com/booksage/booksage-api/internal/platform/llm"
 	neo4jpkg "github.com/booksage/booksage-api/internal/platform/neo4j"
@@ -68,9 +67,8 @@ func (s *Server) Run() error {
 		}
 	}
 
-	// Initialize Ollama Clients
+	// Initialize Ollama Clients (LLM Only - Embedding is now handled by Infinity)
 	localLLMClient := llm.NewLocalOllamaClient(s.cfg.Model.OllamaHost, s.cfg.Model.OllamaLLM)
-	localEmbedClient := llm.NewLocalOllamaClient(s.cfg.Model.OllamaHost, s.cfg.Model.OllamaEmbed)
 
 	// Override Gemini with Local Client if requested
 	if s.cfg.Model.LocalOnly {
@@ -78,35 +76,27 @@ func (s *Server) Run() error {
 		geminiClient = localLLMClient
 	}
 
-	// Initialize the LLM Router
-	llmRouter := llm.NewRouter(localLLMClient, localEmbedClient, geminiClient)
-	log.Printf("[System] 🛤️  LLM Router initialized (Cloud: %s | Local LLM: %s | Local Embed: %s)",
-		geminiClient.Name(), localLLMClient.Name(), localEmbedClient.Name())
+	// Initialize the LLM Router (Ollama for simple tasks, Gemini/Ollama for complex)
+	// Passing localLLMClient for both Embedding slots is fine as placeholder, but router logic should prioritize Infinity where applicable?
+	// Actually, Router still handles "simple keyword extraction" via LLM.
+	// Embedding task routing in Router might be obsolete if we inject TensorEngine directly.
+	// We'll keep it for now but note that EmbeddingClient usage is deprecated in favor of TensorEngine.
+	llmRouter := llm.NewRouter(localLLMClient, localLLMClient, geminiClient)
+	log.Printf("[System] 🛤️  LLM Router initialized (Cloud: %s | Local LLM: %s)",
+		geminiClient.Name(), localLLMClient.Name())
 
 	// Initialize Infinity Tensor Engine
 	tensorClient := infinity.NewClient(s.cfg.Model.InfinityURL)
 	log.Printf("[System] ♾️  Infinity Tensor Engine initialized at %s", s.cfg.Model.InfinityURL)
 
 	// Pull configured Ollama models at startup
-	log.Printf("[System] 📥 Ensuring local models '%s' and '%s' are available...", s.cfg.Model.OllamaLLM, s.cfg.Model.OllamaEmbed)
+	log.Printf("[System] 📥 Ensuring local LLM model '%s' is available...", s.cfg.Model.OllamaLLM)
 	if err := localLLMClient.PullModel(ctx, s.cfg.Model.OllamaLLM); err != nil {
 		log.Printf("[Warning] 📥 Failed to pull LLM model '%s': %v", s.cfg.Model.OllamaLLM, err)
-	}
-	if err := localEmbedClient.PullModel(ctx, s.cfg.Model.OllamaEmbed); err != nil {
-		log.Printf("[Warning] 📥 Failed to pull Embed model '%s': %v", s.cfg.Model.OllamaEmbed, err)
 	}
 
 	// Initialize gRPC clients
 	parserClient := pb.NewDocumentParserServiceClient(conn)
-
-	// Route Embedding Task (Ollama by default as per Router logic)
-	embeddingClient := llmRouter.RouteEmbeddingTask(string(ports.TaskEmbedding))
-	if embeddingClient == nil {
-		log.Fatalf("[Error] Failed to route embedding task. Ensure a valid LLM client is configured.")
-	}
-
-	// Wrap embeddingClient in a Batcher (max 100 texts per batch)
-	embedBatcher := embedding.NewBatcher(embeddingClient, 100)
 
 	// Initialize Database Clients and Saga Orchestrator
 	s.dbConn, err = sql.Open(sqliteshim.ShimName, "booksage.db")
@@ -138,11 +128,11 @@ func (s *Server) Run() error {
 
 	// --- Domain Services ---
 
-	// Saga Orchestrator
-	sagaOrchestrator := ingest.NewSagaOrchestrator(qdrantClient, neo4jClient, bunStore, bunStore, llmRouter, embeddingClient)
+	// Saga Orchestrator (Updated to use TensorEngine)
+	sagaOrchestrator := ingest.NewSagaOrchestrator(qdrantClient, neo4jClient, bunStore, bunStore, llmRouter, tensorClient)
 
-	// Ingestion Service (new async worker)
-	ingestService := ingest.NewIngestionService(sagaOrchestrator, embedBatcher)
+	// Ingestion Service (Updated to use TensorEngine)
+	ingestService := ingest.NewIngestionService(sagaOrchestrator, tensorClient)
 
 	// Fusion Retriever (Uses Infinity for Tensors)
 	fusionRetriever := query.NewFusionRetriever(qdrantClient, neo4jClient, tensorClient, llmRouter)

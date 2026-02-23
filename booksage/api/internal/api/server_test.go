@@ -10,22 +10,27 @@ import (
 
 	"github.com/booksage/booksage-api/internal/ingest"
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
-	"github.com/booksage/booksage-api/internal/platform/embedding"
 	"github.com/booksage/booksage-api/internal/query"
 	"google.golang.org/grpc"
 )
 
 // Mock objects
-type mockEmbeddingClient struct{}
+type mockTensorClient struct{}
 
-func (m *mockEmbeddingClient) Embed(_ context.Context, texts []string) ([][]float32, error) {
+func (m *mockTensorClient) Embed(_ context.Context, texts []string) ([][]float32, error) {
 	embeddings := make([][]float32, len(texts))
 	for i := range texts {
 		embeddings[i] = make([]float32, 128) // Mock 128d vector
 	}
 	return embeddings, nil
 }
-func (m *mockEmbeddingClient) Name() string { return "mock_embedding" }
+func (m *mockTensorClient) Rerank(_ context.Context, query string, docs []string) ([]float32, error) {
+	scores := make([]float32, len(docs))
+	for i := range docs {
+		scores[i] = 0.9
+	}
+	return scores, nil
+}
 
 type mockParserClient struct{}
 
@@ -55,14 +60,13 @@ func (m *mockParseClientStream) CloseSend() error { return nil }
 
 func createTestHandler() http.Handler {
 	// Mocks
-	embedder := &mockEmbeddingClient{}
-	embedBatcher := embedding.NewBatcher(embedder, 10)
+	tensor := &mockTensorClient{}
 	docRepo := &ingest.MockDocumentRepository{}
 	sagaRepo := &ingest.MockSagaRepository{}
 
 	// Services
-	saga := ingest.NewSagaOrchestrator(ingest.NewMockQdrantClient(), ingest.NewMockNeo4jClient(), docRepo, sagaRepo, nil, embedder)
-	ingestService := ingest.NewIngestionService(saga, embedBatcher)
+	saga := ingest.NewSagaOrchestrator(ingest.NewMockQdrantClient(), ingest.NewMockNeo4jClient(), docRepo, sagaRepo, nil, tensor)
+	ingestService := ingest.NewIngestionService(saga, tensor)
 
 	ingestHandler := ingest.NewHandler(saga, ingestService, &mockParserClient{})
 
