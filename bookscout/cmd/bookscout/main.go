@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bookscout/internal/adapters/destination"
-	"bookscout/internal/adapters/source"
-	"bookscout/internal/adapters/tracker"
+	"bookscout/internal/client"
 	"bookscout/internal/config"
-	"bookscout/internal/core/service"
+	"bookscout/internal/scraper"
+	"bookscout/internal/tracker"
+	"bookscout/internal/worker"
 	"context"
 	"log"
 	"os"
@@ -24,7 +24,7 @@ func main() {
 
 	// Initialize Adapters
 	// Check source type if needed, but for now defaults to OPDS as per config logic
-	src := source.NewOPDSAdapter(
+	src := scraper.NewOPDSAdapter(
 		cfg.OPDSBaseURL,
 		cfg.OPDSUsername,
 		cfg.OPDSPassword,
@@ -32,10 +32,10 @@ func main() {
 		cfg.LogLevel,
 	)
 
-	dest := destination.NewBookSageAPIAdapter(cfg.APIBaseURL)
+	dest := client.NewBookSageAPIAdapter(cfg.APIBaseURL)
 
 	// Initialize Service
-	worker := service.NewWorkerService(cfg, src, dest, state)
+	svc := worker.NewService(cfg, src, dest, state)
 
 	// Context with timeout (configurable max for batch execution)
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.GetWorkerTimeout())
@@ -52,7 +52,7 @@ func main() {
 
 	// Run Worker
 	log.Println("Starting BookScout Worker...")
-	if err := worker.Run(ctx); err != nil {
+	if err := svc.Run(ctx); err != nil {
 		log.Fatalf("Worker failed: %v", err)
 	}
 	log.Println("BookScout Worker completed successfully.")

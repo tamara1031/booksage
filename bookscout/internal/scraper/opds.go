@@ -1,9 +1,8 @@
-package source
+package scraper
 
 import (
-	"bookscout/internal/adapters/util"
-	"bookscout/internal/core/domain/models"
-	"bookscout/internal/core/domain/ports"
+	"bookscout/internal/domain"
+	"bookscout/internal/pkg/httpclient"
 	"context"
 	"fmt"
 	"io"
@@ -14,9 +13,6 @@ import (
 
 	"github.com/mmcdole/gofeed/atom"
 )
-
-// Ensure OPDSAdapter implements BookSource
-var _ ports.BookSource = (*OPDSAdapter)(nil)
 
 type OPDSAdapter struct {
 	catalogURL string
@@ -42,9 +38,9 @@ func NewOPDSAdapter(catalogURL, username, password string, maxSize int64, logLev
 		username:   username,
 		password:   password,
 		client: &http.Client{
-			Transport: &util.RetryTransport{
+			Transport: &httpclient.RetryTransport{
 				MaxRetries: 3,
-				Base:       &util.LoggingTransport{LogLevel: logLevel},
+				Base:       &httpclient.LoggingTransport{LogLevel: logLevel},
 			},
 			Timeout: 5 * time.Minute,
 		},
@@ -52,13 +48,13 @@ func NewOPDSAdapter(catalogURL, username, password string, maxSize int64, logLev
 	}
 }
 
-func (a *OPDSAdapter) FetchNewBooks(ctx context.Context, lastCheckTimestamp int64) ([]models.BookMetadata, error) {
+func (a *OPDSAdapter) FetchNewBooks(ctx context.Context, lastCheckTimestamp int64) ([]domain.BookMetadata, error) {
 	log.Printf("DEBUG OPDS: Fetching new books since %d (%s)", lastCheckTimestamp, time.Unix(lastCheckTimestamp, 0).Format(time.RFC3339))
 	if a.catalogURL == "" {
 		return nil, fmt.Errorf("OPDS URL is not configured")
 	}
 
-	var allBooks []models.BookMetadata
+	var allBooks []domain.BookMetadata
 	visitedURLs := make(map[string]bool)
 	queue := []struct {
 		url   string
@@ -125,10 +121,20 @@ const (
 	relCatalog     = "http://opds-spec.org/catalog"
 )
 
-func (a *OPDSAdapter) fetchPage(ctx context.Context, targetURL string, lastCheckTimestamp int64) ([]models.BookMetadata, string, []string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+func (a *OPDSAdapter) fetchPage(ctx context.Context, targetURL string, lastCheckTimestamp int64) ([]domain.BookMetadata, string, []string, error) {
+	body, err := a.fetch(ctx, targetURL)
 	if err != nil {
 		return nil, "", nil, err
+	}
+	defer body.Close()
+
+	return a.parse(body, targetURL, lastCheckTimestamp)
+}
+
+func (a *OPDSAdapter) fetch(ctx context.Context, targetURL string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+	if err != nil {
+		return nil, err
 	}
 
 	if a.username != "" {
@@ -137,21 +143,25 @@ func (a *OPDSAdapter) fetchPage(ctx context.Context, targetURL string, lastCheck
 
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("failed to fetch OPDS feed from %s: %w", targetURL, err)
+		return nil, fmt.Errorf("failed to fetch OPDS feed from %s: %w", targetURL, err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", nil, fmt.Errorf("OPDS feed returned status: %d", resp.StatusCode)
+		resp.Body.Close()
+		return nil, fmt.Errorf("OPDS feed returned status: %d", resp.StatusCode)
 	}
 
+	return resp.Body, nil
+}
+
+func (a *OPDSAdapter) parse(r io.Reader, targetURL string, lastCheckTimestamp int64) ([]domain.BookMetadata, string, []string, error) {
 	fp := &atom.Parser{}
-	feed, err := fp.Parse(resp.Body)
+	feed, err := fp.Parse(r)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("failed to parse OPDS feed as Atom: %w", err)
 	}
 
-	var books []models.BookMetadata
+	var books []domain.BookMetadata
 	var subsections []string
 	baseURL, _ := url.Parse(targetURL)
 
@@ -178,7 +188,7 @@ func (a *OPDSAdapter) fetchPage(ctx context.Context, targetURL string, lastCheck
 			continue
 		}
 
-		book := models.BookMetadata{
+		book := domain.BookMetadata{
 			ID:          entry.ID,
 			Title:       entry.Title,
 			Author:      "Unknown",
@@ -276,7 +286,7 @@ func (l *limitReadCloser) Close() error {
 	return l.closer.Close()
 }
 
-func (a *OPDSAdapter) DownloadBookContent(ctx context.Context, book models.BookMetadata) (io.ReadCloser, error) {
+func (a *OPDSAdapter) DownloadBookContent(ctx context.Context, book domain.BookMetadata) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", book.DownloadURL, nil)
 	if err != nil {
 		return nil, err

@@ -1,7 +1,6 @@
 package tracker
 
 import (
-	"bookscout/internal/core/domain/ports"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,10 +8,6 @@ import (
 	"path/filepath"
 	"sync"
 )
-
-// FileStateStore implements ports.StateStore using a local JSON file.
-// Ensure FileStateStore implements StateStore
-var _ ports.StateStore = (*FileStateStore)(nil)
 
 type FileStateStore struct {
 	filepath string

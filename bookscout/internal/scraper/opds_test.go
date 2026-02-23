@@ -1,7 +1,7 @@
-package source
+package scraper
 
 import (
-	"bookscout/internal/core/domain/models"
+	"bookscout/internal/domain"
 	"context"
 	"fmt"
 	"io"
@@ -166,7 +166,7 @@ func TestOPDSAdapter_DownloadBookContent_Errors(t *testing.T) {
 		maxSize: 100,
 	}
 
-	_, err := adapter.DownloadBookContent(context.Background(), models.BookMetadata{DownloadURL: server404.URL})
+	_, err := adapter.DownloadBookContent(context.Background(), domain.BookMetadata{DownloadURL: server404.URL})
 	if err == nil {
 		t.Fatal("Expected error for 404")
 	}
@@ -177,7 +177,7 @@ func TestOPDSAdapter_DownloadBookContent_Errors(t *testing.T) {
 	}))
 	defer serverLarge.Close()
 
-	rc, err := adapter.DownloadBookContent(context.Background(), models.BookMetadata{DownloadURL: serverLarge.URL})
+	rc, err := adapter.DownloadBookContent(context.Background(), domain.BookMetadata{DownloadURL: serverLarge.URL})
 	if err != nil {
 		t.Fatalf("Expected no error on call, got %v", err)
 	}
