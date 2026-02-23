@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bookscout/internal/client"
-	"bookscout/internal/config"
-	"bookscout/internal/scraper"
-	"bookscout/internal/tracker"
-	"bookscout/internal/worker"
+	"bookscout/internal/scout/app"
+	"bookscout/internal/scout/config"
+	"bookscout/internal/scout/infra/booksage"
+	"bookscout/internal/scout/infra/opds"
+	"bookscout/internal/scout/infra/sqlite"
 	"context"
 	"log"
 	"os"
@@ -17,62 +17,46 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "bookscout",
-	Short: "BookScout is a worker that scrapes books and sends them to BookSage API",
+	Short: "BookScout is a DDD-organized worker",
 	Run: func(cmd *cobra.Command, args []string) {
-		runWorker()
+		run()
 	},
 }
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatalf("Execution failed: %v", err)
+		log.Fatal(err)
 	}
 }
 
-func runWorker() {
+func run() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatal(err)
 	}
 
-	// Initialize State Store
-	state, err := tracker.NewSQLiteStateStore(cfg.StateFilePath)
+	repo, err := sqlite.NewSQLiteRepository(cfg.StateFilePath)
 	if err != nil {
-		log.Fatalf("Failed to initialize state store: %v", err)
+		log.Fatal(err)
 	}
-	defer state.Close()
+	defer repo.Close()
 
-	// Initialize Adapters
-	src := scraper.NewOPDSAdapter(
-		cfg.OPDSBaseURL,
-		cfg.OPDSUsername,
-		cfg.OPDSPassword,
-		cfg.MaxBookSizeBytes,
-		cfg.LogLevel,
-	)
+	scraper := opds.NewOPDSScraper(cfg.OPDSBaseURL, cfg.OPDSUsername, cfg.OPDSPassword, cfg.MaxBookSizeBytes, cfg.LogLevel)
+	ingestor := booksage.NewAPIIngestor(cfg.APIBaseURL)
 
-	dest := client.NewBookSageAPIAdapter(cfg.APIBaseURL)
+	worker := app.NewScoutWorker(cfg, scraper, ingestor, repo)
 
-	// Initialize Service
-	svc := worker.NewService(cfg, src, dest, state)
-
-	// Context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.GetWorkerTimeout())
 	defer cancel()
 
-	// Handle graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-sigChan
-		log.Println("Received shutdown signal, cancelling context...")
+		<-sig
 		cancel()
 	}()
 
-	// Run Worker
-	log.Println("Starting BookScout Worker...")
-	if err := svc.Run(ctx); err != nil {
-		log.Fatalf("Worker failed: %v", err)
+	if err := worker.Run(ctx); err != nil {
+		log.Fatal(err)
 	}
-	log.Println("BookScout Worker completed successfully.")
 }

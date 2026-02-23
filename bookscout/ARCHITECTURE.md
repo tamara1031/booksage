@@ -2,7 +2,7 @@
 
 BookScout is a lightweight, stateful collection worker designed to pull documents from remote sources (like OPDS feeds) and push them to the BookSage ingestion API.
 
-## 1. System Overview (全体設計)
+## 1. System Overview
 
 ### Responsibilities
 - **Extract (Fetch):** Periodically polls remote sources for new content.
@@ -41,7 +41,7 @@ graph LR
     Worker <--|Poll Status by Hash| API
 ```
 
-## 2. Class Design (構造の可視化)
+## 2. Class Design
 
 The architecture follows the Hexagonal Architecture (Ports & Adapters) pattern.
 
@@ -103,7 +103,7 @@ classDiagram
     SQLiteStateStore ..|> StateStore
 ```
 
-## 3. Ingest Sequence (ふるまいの可視化)
+## 3. Ingest Sequence
 
 The ingestion process is split into two phases to handle asynchronous API processing reliably.
 
