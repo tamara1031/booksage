@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/booksage/booksage-api/internal/domain"
 	pb "github.com/booksage/booksage-api/gen/pb/booksage/v1"
+	"github.com/booksage/booksage-api/internal/domain"
 )
 
 // Service defines the interface for ingestion operations.
