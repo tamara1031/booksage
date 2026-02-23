@@ -6,6 +6,7 @@ from booksage.adapters.etl.epub_adapter import EpubParser
 from booksage.domain.models import DocumentMetadata
 from booksage.ports.parser import IDocumentParser
 
+
 class DocumentParser:
     def __init__(self):
         # Setup the router/registry of parsers based on extension

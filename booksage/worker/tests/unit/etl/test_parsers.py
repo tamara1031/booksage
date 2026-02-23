@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+from booksage.adapters.etl import DoclingParser, PyMuPDFParser
 from booksage.domain import DocumentMetadata
-from booksage.etl import DoclingParser, PyMuPDFParser
 
 
 def test_pymupdf_fallback():
@@ -47,7 +47,7 @@ def test_docling_hierarchical():
 
         # We need to mock instance checks because SectionHeaderItem etc
         # are imported inside the method
-        with patch("booksage.etl.docling_adapter.isinstance") as mock_isinstance:
+        with patch("booksage.adapters.etl.docling_adapter.isinstance") as mock_isinstance:
 
             def side_effect(obj, cls):
                 if "SectionHeaderItem" in str(cls) and obj == mock_h1:
