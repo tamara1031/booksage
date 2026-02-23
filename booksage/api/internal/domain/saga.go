@@ -3,8 +3,6 @@ package domain
 import (
 	"context"
 	"time"
-
-	"github.com/uptrace/bun"
 )
 
 // IngestStep represents the individual steps in the ingestion process
@@ -29,32 +27,28 @@ const (
 
 // IngestSaga represents the state machine for an ingestion process
 type IngestSaga struct {
-	bun.BaseModel `bun:"table:ingest_sagas,alias:is"`
-
-	ID           int64      `bun:",pk,autoincrement"`
-	DocumentID   int64      `bun:",notnull"`
-	Document     *Document  `bun:"rel:belongs-to,join:document_id=id"`
-	Status       SagaStatus `bun:",notnull"`
-	Version      int        `bun:",notnull,default:1"`
-	CurrentStep  IngestStep `bun:",nullzero"`
-	ErrorMessage string     `bun:",nullzero"`
-	CreatedAt    time.Time  `bun:",nullzero,notnull,default:current_timestamp"`
-	UpdatedAt    time.Time  `bun:",nullzero,notnull,default:current_timestamp"`
+	ID           int64
+	DocumentID   int64
+	Document     *Document
+	Status       SagaStatus
+	Version      int
+	CurrentStep  IngestStep
+	ErrorMessage string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // SagaStep represents a detailed log of a single step
 type SagaStep struct {
-	bun.BaseModel `bun:"table:saga_steps,alias:ss"`
-
-	ID        int64       `bun:",pk,autoincrement"`
-	SagaID    int64       `bun:",notnull"`
-	Saga      *IngestSaga `bun:"rel:belongs-to,join:saga_id=id"`
-	Name      IngestStep  `bun:",notnull"`
-	Status    SagaStatus  `bun:",notnull"`
-	Metadata  string      `bun:",nullzero"` // JSON blob
-	ErrorLog  string      `bun:",nullzero"`
-	CreatedAt time.Time   `bun:",nullzero,notnull,default:current_timestamp"`
-	UpdatedAt time.Time   `bun:",nullzero,notnull,default:current_timestamp"`
+	ID        int64
+	SagaID    int64
+	Saga      *IngestSaga
+	Name      IngestStep
+	Status    SagaStatus
+	Metadata  string // JSON blob
+	ErrorLog  string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // SagaRepository handles Ingest Saga state persistence.

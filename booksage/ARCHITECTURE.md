@@ -60,7 +60,18 @@ The generation phase is wrapped in an autonomous verification loop:
 
 ---
 
-## 4. Class Design
+## 4. Code Organization (Hexagonal Architecture)
+
+The Go API Orchestrator follows a **Hexagonal Architecture (Ports and Adapters)** to isolate business logic from infrastructure.
+
+*   **`internal/domain/`**: The Core. Defines entities (`Document`, `Saga`) and repository interfaces (`DocumentRepository`, `LLMClient`). Pure Go.
+*   **`internal/usecase/`**: Application Logic. Orchestrates domain objects to fulfill use cases, organized by feature (e.g., `ingest/`, `query/`).
+*   **`internal/port/`**: Primary Adapters (Driving). Entry points into the application, such as HTTP handlers.
+*   **`internal/infrastructure/`**: Secondary Adapters (Driven). Concrete implementations of domain interfaces (e.g., `db/` (Postgres/SQLite), `llm/` (Ollama/Gemini), `vector/`).
+
+---
+
+## 5. Class Design
 
 The following diagram illustrates the core components of the BookSage Ingestion Pipeline and Query Engine.
 
@@ -148,9 +159,9 @@ classDiagram
 
 ---
 
-## 5. Sequence Diagrams
+## 6. Sequence Diagrams
 
-### 5.1 Ingestion Flow
+### 6.1 Ingestion Flow
 This flow details the interaction between the Go API Orchestrator (Saga) and the Python Parser Worker, highlighting the refactored strict separation of concerns where business logic (resolution/building) is delegated.
 
 ```mermaid
@@ -228,7 +239,7 @@ sequenceDiagram
     deactivate Server
 ```
 
-### 5.2 RAG Generation Flow
+### 6.2 RAG Generation Flow
 This flow visualizes the enhanced Adaptive RAG pipeline, incorporating Query Routing, Reflexion loops for missing context, and strict loop termination guards.
 
 1.  **Adaptive RAG (Query Routing)**:

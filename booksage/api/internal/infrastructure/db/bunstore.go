@@ -21,13 +21,13 @@ func NewBunStore(db *sql.DB, dialect schema.Dialect) (*BunStore, error) {
 
 	// Create tables if they don't exist
 	ctx := context.Background()
-	if _, err := bunDB.NewCreateTable().Model((*domain.Document)(nil)).IfNotExists().Exec(ctx); err != nil {
+	if _, err := bunDB.NewCreateTable().Model((*documentModel)(nil)).IfNotExists().Exec(ctx); err != nil {
 		return nil, fmt.Errorf("failed to create documents table: %w", err)
 	}
-	if _, err := bunDB.NewCreateTable().Model((*domain.IngestSaga)(nil)).IfNotExists().Exec(ctx); err != nil {
+	if _, err := bunDB.NewCreateTable().Model((*ingestSagaModel)(nil)).IfNotExists().Exec(ctx); err != nil {
 		return nil, fmt.Errorf("failed to create ingest_sagas table: %w", err)
 	}
-	if _, err := bunDB.NewCreateTable().Model((*domain.SagaStep)(nil)).IfNotExists().Exec(ctx); err != nil {
+	if _, err := bunDB.NewCreateTable().Model((*sagaStepModel)(nil)).IfNotExists().Exec(ctx); err != nil {
 		return nil, fmt.Errorf("failed to create saga_steps table: %w", err)
 	}
 
@@ -36,36 +36,39 @@ func NewBunStore(db *sql.DB, dialect schema.Dialect) (*BunStore, error) {
 
 // DocumentRepository Implementation
 func (s *BunStore) CreateDocument(ctx context.Context, doc *domain.Document) (int64, error) {
-	if _, err := s.db.NewInsert().Model(doc).Exec(ctx); err != nil {
+	model := toDocumentModel(doc)
+	if _, err := s.db.NewInsert().Model(model).Exec(ctx); err != nil {
 		return 0, err
 	}
-	return doc.ID, nil
+	// Copy generated ID back to domain entity
+	doc.ID = model.ID
+	return model.ID, nil
 }
 
 func (s *BunStore) GetDocumentByID(ctx context.Context, id int64) (*domain.Document, error) {
-	doc := new(domain.Document)
-	if err := s.db.NewSelect().Model(doc).Where("id = ?", id).Scan(ctx); err != nil {
+	model := new(documentModel)
+	if err := s.db.NewSelect().Model(model).Where("id = ?", id).Scan(ctx); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, domain.ErrNotFound
 		}
 		return nil, err
 	}
-	return doc, nil
+	return model.toDomain(), nil
 }
 
 func (s *BunStore) GetDocumentByHash(ctx context.Context, hash []byte) (*domain.Document, error) {
-	doc := new(domain.Document)
-	if err := s.db.NewSelect().Model(doc).Where("file_hash = ?", hash).Scan(ctx); err != nil {
+	model := new(documentModel)
+	if err := s.db.NewSelect().Model(model).Where("file_hash = ?", hash).Scan(ctx); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, domain.ErrNotFound
 		}
 		return nil, err
 	}
-	return doc, nil
+	return model.toDomain(), nil
 }
 
 func (s *BunStore) DeleteDocument(ctx context.Context, id int64) error {
-	if _, err := s.db.NewDelete().Model((*domain.Document)(nil)).Where("id = ?", id).Exec(ctx); err != nil {
+	if _, err := s.db.NewDelete().Model((*documentModel)(nil)).Where("id = ?", id).Exec(ctx); err != nil {
 		return err
 	}
 	return nil
@@ -73,36 +76,38 @@ func (s *BunStore) DeleteDocument(ctx context.Context, id int64) error {
 
 // SagaRepository Implementation
 func (s *BunStore) CreateSaga(ctx context.Context, saga *domain.IngestSaga) (int64, error) {
-	if _, err := s.db.NewInsert().Model(saga).Exec(ctx); err != nil {
+	model := toIngestSagaModel(saga)
+	if _, err := s.db.NewInsert().Model(model).Exec(ctx); err != nil {
 		return 0, err
 	}
-	return saga.ID, nil
+	saga.ID = model.ID
+	return model.ID, nil
 }
 
 func (s *BunStore) GetSagaByID(ctx context.Context, id int64) (*domain.IngestSaga, error) {
-	saga := new(domain.IngestSaga)
-	if err := s.db.NewSelect().Model(saga).Where("id = ?", id).Scan(ctx); err != nil {
+	model := new(ingestSagaModel)
+	if err := s.db.NewSelect().Model(model).Where("id = ?", id).Scan(ctx); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, domain.ErrNotFound
 		}
 		return nil, err
 	}
-	return saga, nil
+	return model.toDomain(), nil
 }
 
 func (s *BunStore) GetLatestSagaByDocumentID(ctx context.Context, docID int64) (*domain.IngestSaga, error) {
-	saga := new(domain.IngestSaga)
-	if err := s.db.NewSelect().Model(saga).Where("document_id = ?", docID).Order("created_at DESC").Limit(1).Scan(ctx); err != nil {
+	model := new(ingestSagaModel)
+	if err := s.db.NewSelect().Model(model).Where("document_id = ?", docID).Order("created_at DESC").Limit(1).Scan(ctx); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, domain.ErrNotFound
 		}
 		return nil, err
 	}
-	return saga, nil
+	return model.toDomain(), nil
 }
 
 func (s *BunStore) UpdateSagaStatus(ctx context.Context, sagaID int64, currentVersion int, status domain.SagaStatus, currentStep domain.IngestStep, errorMsg string) error {
-	res, err := s.db.NewUpdate().Model((*domain.IngestSaga)(nil)).
+	res, err := s.db.NewUpdate().Model((*ingestSagaModel)(nil)).
 		Set("status = ?", status).
 		Set("current_step = ?", currentStep).
 		Set("error_message = ?", errorMsg).
@@ -125,22 +130,29 @@ func (s *BunStore) UpdateSagaStatus(ctx context.Context, sagaID int64, currentVe
 }
 
 func (s *BunStore) UpsertSagaStep(ctx context.Context, step *domain.SagaStep) (int64, error) {
-	if step.ID == 0 {
-		if _, err := s.db.NewInsert().Model(step).Exec(ctx); err != nil {
+	model := toSagaStepModel(step)
+	if model.ID == 0 {
+		if _, err := s.db.NewInsert().Model(model).Exec(ctx); err != nil {
 			return 0, err
 		}
 	} else {
-		if _, err := s.db.NewUpdate().Model(step).WherePK().Exec(ctx); err != nil {
+		if _, err := s.db.NewUpdate().Model(model).WherePK().Exec(ctx); err != nil {
 			return 0, err
 		}
 	}
-	return step.ID, nil
+	step.ID = model.ID
+	return model.ID, nil
 }
 
 func (s *BunStore) GetSagaSteps(ctx context.Context, sagaID int64) ([]*domain.SagaStep, error) {
-	var steps []*domain.SagaStep
-	if err := s.db.NewSelect().Model(&steps).Where("saga_id = ?", sagaID).Order("created_at ASC").Scan(ctx); err != nil {
+	var models []*sagaStepModel
+	if err := s.db.NewSelect().Model(&models).Where("saga_id = ?", sagaID).Order("created_at ASC").Scan(ctx); err != nil {
 		return nil, err
+	}
+
+	steps := make([]*domain.SagaStep, len(models))
+	for i, m := range models {
+		steps[i] = m.toDomain()
 	}
 	return steps, nil
 }

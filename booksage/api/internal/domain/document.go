@@ -3,23 +3,19 @@ package domain
 import (
 	"context"
 	"time"
-
-	"github.com/uptrace/bun"
 )
 
 // Document represents the metadata of a book
 type Document struct {
-	bun.BaseModel `bun:"table:documents,alias:d"`
-
-	ID        int64     `bun:",pk,autoincrement"`
-	FileHash  []byte    `bun:",unique,notnull"`
-	Title     string    `bun:",notnull"`
-	Author    string    `bun:",nullzero"`
-	FilePath  string    `bun:",notnull"`
-	FileSize  int64     `bun:",notnull"`
-	MimeType  string    `bun:",notnull"`
-	CreatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
-	UpdatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
+	ID        int64
+	FileHash  []byte
+	Title     string
+	Author    string
+	FilePath  string
+	FileSize  int64
+	MimeType  string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // DocumentRepository handles book metadata persistence.
