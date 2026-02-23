@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 )
 
 func main() {
@@ -38,8 +37,8 @@ func main() {
 	// Initialize Service
 	worker := service.NewWorkerService(cfg, src, dest, state)
 
-	// Context with timeout (1 hour max for batch execution)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Hour)
+	// Context with timeout (configurable max for batch execution)
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.GetWorkerTimeout())
 	defer cancel()
 
 	// Handle graceful shutdown

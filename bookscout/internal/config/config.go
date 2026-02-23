@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/caarlos0/env/v10"
 	"github.com/joho/godotenv"
@@ -26,7 +27,18 @@ type Config struct {
 
 	MaxBookSizeBytes int64 `env:"SCOUT_MAX_BOOK_SIZE_BYTES" envDefault:"52428800"`
 
+	WorkerTimeoutStr string `env:"SCOUT_WORKER_TIMEOUT" envDefault:"1h"`
+
 	StateFilePath string `env:"SCOUT_STATE_FILE_PATH" envDefault:"scout_state.json"`
+}
+
+func (c *Config) GetWorkerTimeout() time.Duration {
+	d, err := time.ParseDuration(c.WorkerTimeoutStr)
+	if err != nil {
+		log.Printf("Invalid duration string %s, defaulting to 1h", c.WorkerTimeoutStr)
+		return time.Hour
+	}
+	return d
 }
 
 func (c *Config) Validate() error {
