@@ -25,3 +25,5 @@ venv.bak/
 api/booksage.db
 api/booksage-api
 api/coverage.out
+api/gen/
+worker/gen/

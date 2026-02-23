@@ -4,7 +4,7 @@ TAG ?= latest
 # --- Protocol Buffers ---
 PROTO_DIR = proto/booksage/v1
 GO_PROTO_OUT = api/gen/pb
-PYTHON_PROTO_OUT = worker/src/booksage/pb
+PYTHON_PROTO_OUT = worker/gen
 
 # --- API (Go) ---
 
@@ -118,9 +118,10 @@ proto-go:
 
 .PHONY: proto-python
 proto-python:
-	@mkdir -p $(PYTHON_PROTO_OUT)
-	@uv run --no-project --with grpcio-tools python -m grpc_tools.protoc -Iproto --python_out=worker/src/booksage/pb --grpc_python_out=worker/src/booksage/pb $(PROTO_DIR)/*.proto
-	@sed -i 's/from booksage.v1 import/from . import/g' $(PYTHON_PROTO_OUT)/booksage/v1/*.py
+	@mkdir -p $(PYTHON_PROTO_OUT)/pb
+	@uv run --no-project --with grpcio-tools python -m grpc_tools.protoc -Iproto --python_out=$(PYTHON_PROTO_OUT)/pb --grpc_python_out=$(PYTHON_PROTO_OUT)/pb $(PROTO_DIR)/*.proto
+	@sed -i 's/from booksage.v1 import/from . import/g' $(PYTHON_PROTO_OUT)/pb/booksage/v1/*.py
+	@touch $(PYTHON_PROTO_OUT)/__init__.py $(PYTHON_PROTO_OUT)/pb/__init__.py $(PYTHON_PROTO_OUT)/pb/booksage/__init__.py $(PYTHON_PROTO_OUT)/pb/booksage/v1/__init__.py
 
 .PHONY: proto-gen
 proto-gen: proto-go proto-python

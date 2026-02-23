@@ -193,3 +193,6 @@ bin/
 # Extra Coverage reports
 *.cov
 *.lcov
+
+# test artifacts
+**/*.db

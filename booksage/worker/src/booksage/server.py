@@ -7,7 +7,7 @@ import grpc
 from booksage.config import load
 from booksage.handler import BookSageWorker
 from booksage.parser import DocumentParser
-from booksage.pb.booksage.v1 import booksage_pb2_grpc
+from pb.booksage.v1 import booksage_pb2_grpc
 
 
 async def serve():
