@@ -2,40 +2,78 @@ package query
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 )
 
-type mockLLMClient struct {
-	resp string
-	err  error
-}
-
-func (m *mockLLMClient) Generate(ctx context.Context, prompt string) (string, error) {
-	return m.resp, m.err
-}
-func (m *mockLLMClient) Name() string { return "mock" }
-
-// Router removed
+// Note: MockLLMClient is defined in self_rag_test.go (shared within package query).
+// If running this test in isolation, ensure MockLLMClient is available.
 
 func TestAdaptiveRouter_DetermineStrategy(t *testing.T) {
 	tests := []struct {
-		name     string
-		resp     string
-		expected Strategy
+		name      string
+		setupMock func() *MockLLMClient
+		expected  Strategy
 	}{
 		{
-			name:     "Summary Intent",
-			resp:     "This is a summary of the book.",
+			name: "Summary Intent",
+			setupMock: func() *MockLLMClient {
+				return &MockLLMClient{
+					GenerateFunc: func(ctx context.Context, prompt string) (string, error) {
+						return "The user wants a summary.", nil
+					},
+				}
+			},
 			expected: StrategySummary,
 		},
 		{
-			name:     "Factual Intent",
-			resp:     "The specific detail is 42.",
+			name: "Factual Intent",
+			setupMock: func() *MockLLMClient {
+				return &MockLLMClient{
+					GenerateFunc: func(ctx context.Context, prompt string) (string, error) {
+						return "factual detail", nil
+					},
+				}
+			},
 			expected: StrategyFactual,
 		},
 		{
-			name:     "Empty Response defaults to Factual",
-			resp:     "",
+			name: "Ambiguous Response (Defaults to Factual)",
+			setupMock: func() *MockLLMClient {
+				return &MockLLMClient{
+					GenerateFunc: func(ctx context.Context, prompt string) (string, error) {
+						return "I am not sure.", nil
+					},
+				}
+			},
+			expected: StrategyFactual,
+		},
+		{
+			name: "LLM Error (Defaults to Factual)",
+			setupMock: func() *MockLLMClient {
+				return &MockLLMClient{
+					GenerateFunc: func(ctx context.Context, prompt string) (string, error) {
+						return "", errors.New("api error")
+					},
+				}
+			},
+			expected: StrategyFactual,
+		},
+		{
+			name: "Context Timeout (Defaults to Factual)",
+			setupMock: func() *MockLLMClient {
+				return &MockLLMClient{
+					GenerateFunc: func(ctx context.Context, prompt string) (string, error) {
+						select {
+						case <-ctx.Done():
+							return "", ctx.Err()
+						default:
+							return "summary", nil
+						}
+					},
+				}
+			},
 			expected: StrategyFactual,
 		},
 	}
@@ -43,15 +81,22 @@ func TestAdaptiveRouter_DetermineStrategy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
-			mockClient := &mockLLMClient{resp: tt.resp}
-			router := NewAdaptiveRouter(mockClient)
+			ctx := context.Background()
+			if tt.name == "Context Timeout (Defaults to Factual)" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 1*time.Millisecond)
+				defer cancel()
+				time.Sleep(2 * time.Millisecond) // Ensure timeout triggers
+			}
+
+			router := NewAdaptiveRouter(tt.setupMock())
 
 			// Act
-			strategy, err := router.DetermineStrategy(context.Background(), "dummy query")
+			strategy, err := router.DetermineStrategy(ctx, "query")
 
 			// Assert
 			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+				t.Errorf("unexpected error: %v", err)
 			}
 			if strategy != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, strategy)
@@ -61,13 +106,10 @@ func TestAdaptiveRouter_DetermineStrategy(t *testing.T) {
 }
 
 func TestAdaptiveRouter_NilSafety(t *testing.T) {
-	// Arrange
-	var router *AdaptiveRouter = nil
+	var router *AdaptiveRouter
 
-	// Act
 	strategy, err := router.DetermineStrategy(context.Background(), "query")
 
-	// Assert
 	if err != nil {
 		t.Errorf("expected no error on nil router, got %v", err)
 	}
