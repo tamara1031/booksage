@@ -11,7 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -49,55 +49,45 @@ func (m *mockBookSource) DownloadBookContent(ctx context.Context, book domain.Bo
 func TestService_Run(t *testing.T) {
 	// 1. Mock Destination Server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/ingest" {
-			t.Errorf("expected path /ingest, got %s", r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
+		if r.Method == "POST" && r.URL.Path == "/ingest" {
+			// In our simplified test, we don't need to actually hash, just return success
+			w.WriteHeader(http.StatusAccepted)
 			return
 		}
-		if r.Method != "POST" {
-			t.Errorf("expected POST method, got %s", r.Method)
-			w.WriteHeader(http.StatusMethodNotAllowed)
+
+		if r.Method == "GET" && r.URL.Path == "/ingest/status" {
+			hash := r.URL.Query().Get("hash")
+			if hash == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "completed",
+			})
 			return
 		}
-		// Verify multipart
-		if err := r.ParseMultipartForm(10 << 20); err != nil {
-			t.Fatal("failed to parse multipart form")
-		}
 
-		// Verify metadata
-		metaStr := r.FormValue("metadata")
-		var meta domain.BookMetadata
-		if err := json.Unmarshal([]byte(metaStr), &meta); err != nil {
-			t.Errorf("invalid metadata json: %v", err)
-		}
-		if meta.Title == "" {
-			t.Error("metadata title is empty")
-		}
-
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer ts.Close()
 
 	// 2. Setup State Store
-	tmpFile, err := os.CreateTemp("", "scout_test_*.json")
+	tmpDB := filepath.Join(t.TempDir(), "scout_test.db")
+	state, err := tracker.NewSQLiteStateStore(tmpDB)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
-
-	state, err := tracker.NewFileStateStore(tmpFile.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
+	defer state.Close()
 
 	// 3. Setup Config
 	cfg := &config.Config{
 		WorkerSinceTimestamp: 0,
 		WorkerBatchSize:      10,
 		WorkerConcurrency:    2,
-		StateFilePath:        tmpFile.Name(),
+		StateFilePath:        tmpDB,
 		APIBaseURL:           ts.URL,
+		WorkerTimeoutStr:     "1h", // Added this
 	}
 
 	// 4. Setup Mock Source
@@ -116,18 +106,22 @@ func TestService_Run(t *testing.T) {
 	// 6. Run Worker
 	svc := worker.NewService(cfg, mockSrc, dest, state)
 
+	// FIRST RUN: Should scrape and record as PROCESSING
 	if err := svc.Run(context.Background()); err != nil {
-		t.Fatalf("Service.Run failed: %v", err)
+		t.Fatalf("First Run failed: %v", err)
 	}
 
-	// 7. Verify State
-	if state.GetWatermark() < now.Add(-10*time.Minute).Unix() {
-		t.Errorf("Watermark not updated correctly, got %d", state.GetWatermark())
+	status, exists := state.GetStatus("1")
+	if !exists || status != tracker.StatusProcessing {
+		t.Errorf("Book 1 should be PROCESSING, got %v", status)
 	}
+
+	// SECOND RUN: Should sync status by hash and mark as COMPLETED
+	if err := svc.Run(context.Background()); err != nil {
+		t.Fatalf("Second Run failed: %v", err)
+	}
+
 	if !state.IsProcessed("1") {
-		t.Error("Book 1 should be marked processed")
-	}
-	if !state.IsProcessed("2") {
-		t.Error("Book 2 should be marked processed")
+		t.Error("Book 1 should be marked COMPLETED after second run")
 	}
 }

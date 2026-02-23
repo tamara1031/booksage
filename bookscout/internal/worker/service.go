@@ -3,6 +3,7 @@ package worker
 import (
 	"bookscout/internal/config"
 	"bookscout/internal/domain"
+	"bookscout/internal/tracker"
 	"context"
 	"fmt"
 	"io"
@@ -19,16 +20,20 @@ type BookSource interface {
 
 // BookDestination defines the interface for sending books to the ingestion system.
 type BookDestination interface {
-	Send(ctx context.Context, book domain.BookMetadata, content io.Reader) error
+	Send(ctx context.Context, book domain.BookMetadata, content io.Reader) (string, error)
+	GetStatusByHash(ctx context.Context, fileHash string) (string, string, error)
 }
 
 // StateStore defines the interface for tracking ingestion progress and preventing duplicates.
 type StateStore interface {
 	GetWatermark() int64
 	IsProcessed(bookID string) bool
-	MarkProcessed(bookID string) error
 	UpdateWatermark(timestamp int64) error
-	Save() error
+
+	// Async tracking methods
+	GetProcessingDocuments() ([]tracker.TrackedDocument, error)
+	UpdateStatusByHash(fileHash string, status tracker.DocumentStatus, errMsg string) error
+	RecordIngestion(bookID string, fileHash string) error
 }
 
 type Service struct {
@@ -54,6 +59,12 @@ func NewService(
 
 // Run executes the batch ingestion process.
 func (s *Service) Run(ctx context.Context) error {
+	// Phase 1: Status Sync
+	if err := s.syncStatus(ctx); err != nil {
+		log.Printf("WARNING: Status sync failed: %v", err)
+	}
+
+	// Phase 2: Scrape & Ingest
 	since := s.determineWatermark()
 
 	books, err := s.fetchAndFilterBooks(ctx, since)
@@ -74,12 +85,46 @@ func (s *Service) Run(ctx context.Context) error {
 	return nil
 }
 
+func (s *Service) syncStatus(ctx context.Context) error {
+	log.Println("Phase 1: Syncing statuses of processing documents...")
+	docs, err := s.state.GetProcessingDocuments()
+	if err != nil {
+		return fmt.Errorf("failed to get processing documents: %w", err)
+	}
+
+	for _, d := range docs {
+		status, errMsg, err := s.dest.GetStatusByHash(ctx, d.FileHash)
+		if err != nil {
+			log.Printf("Failed to get status for hash %s (book %s): %v", d.FileHash, d.ID, err)
+			continue
+		}
+
+		switch status {
+		case "completed":
+			log.Printf("Hash %s COMPLETED for book %s", d.FileHash, d.ID)
+			if err := s.state.UpdateStatusByHash(d.FileHash, tracker.StatusCompleted, ""); err != nil {
+				log.Printf("WARNING: Failed to update status to COMPLETED for hash %s: %v", d.FileHash, err)
+			}
+		case "failed":
+			log.Printf("Hash %s FAILED for book %s: %s", d.FileHash, d.ID, errMsg)
+			if err := s.state.UpdateStatusByHash(d.FileHash, tracker.StatusFailed, errMsg); err != nil {
+				log.Printf("WARNING: Failed to update status to FAILED for hash %s: %v", d.FileHash, err)
+			}
+		case "NOT_FOUND":
+			log.Printf("Hash %s NOT FOUND in API. Still waiting or maybe failed in early stage.", d.FileHash)
+		default:
+			log.Printf("Hash %s is still in state: %s", d.FileHash, status)
+		}
+	}
+	return nil
+}
+
 func (s *Service) determineWatermark() int64 {
 	since := s.cfg.WorkerSinceTimestamp
 	if since == 0 {
 		since = s.state.GetWatermark()
 	}
-	log.Printf("Starting Batch Ingestion (since %d [%s])...", since, time.Unix(since, 0).Format(time.RFC3339))
+	log.Printf("Phase 2: Starting Batch Ingestion (since %d [%s])...", since, time.Unix(since, 0).Format(time.RFC3339))
 	return since
 }
 
@@ -90,7 +135,7 @@ func (s *Service) fetchAndFilterBooks(ctx context.Context, since int64) ([]domai
 	}
 
 	if len(books) == 0 {
-		log.Println("No new books found. Exiting.")
+		log.Println("No new books found.")
 		return nil, nil
 	}
 
@@ -98,7 +143,7 @@ func (s *Service) fetchAndFilterBooks(ctx context.Context, since int64) ([]domai
 
 	var actionableBooks []domain.BookMetadata
 	for _, b := range books {
-		// Skip if already processed (idempotency check)
+		// Skip if already processed or processing
 		if s.state.IsProcessed(b.ID) {
 			log.Printf("Skipping already processed book: %s (ID: %s)", b.Title, b.ID)
 			continue
@@ -107,7 +152,7 @@ func (s *Service) fetchAndFilterBooks(ctx context.Context, since int64) ([]domai
 	}
 
 	if len(actionableBooks) == 0 {
-		log.Println("All books have already been processed.")
+		log.Println("All books have already been processed or are in progress.")
 		return nil, nil
 	}
 
@@ -131,23 +176,22 @@ func (s *Service) processBatch(ctx context.Context, books []domain.BookMetadata,
 		failCount    = 0
 	)
 
-	// Semaphore to control concurrency
 	sem := make(chan struct{}, s.cfg.WorkerConcurrency)
 
 	for _, book := range books {
 		wg.Add(1)
-		sem <- struct{}{} // Acquire token
+		sem <- struct{}{}
 
-		// "Politeness" delay to avoid hammering the source
 		if s.cfg.WorkerDelayMS > 0 {
 			time.Sleep(time.Duration(s.cfg.WorkerDelayMS) * time.Millisecond)
 		}
 
 		go func(b domain.BookMetadata) {
 			defer wg.Done()
-			defer func() { <-sem }() // Release token
+			defer func() { <-sem }()
 
-			if err := s.processBook(ctx, b); err != nil {
+			fileHash, err := s.processBook(ctx, b)
+			if err != nil {
 				log.Printf("ERROR processing book '%s' (%s): %v", b.Title, b.ID, err)
 				mu.Lock()
 				failCount++
@@ -155,11 +199,10 @@ func (s *Service) processBatch(ctx context.Context, books []domain.BookMetadata,
 				return
 			}
 
-			// On success, update state and watermark tracking
 			mu.Lock()
 			successCount++
-			if err := s.state.MarkProcessed(b.ID); err != nil {
-				log.Printf("WARNING: Failed to mark book %s as processed: %v", b.ID, err)
+			if err := s.state.RecordIngestion(b.ID, fileHash); err != nil {
+				log.Printf("WARNING: Failed to record ingestion for book %s (Hash: %s): %v", b.ID, fileHash, err)
 			}
 			if b.AddedAt.Unix() > maxTimestamp {
 				maxTimestamp = b.AddedAt.Unix()
@@ -173,67 +216,59 @@ func (s *Service) processBatch(ctx context.Context, books []domain.BookMetadata,
 }
 
 func (s *Service) finalizeState(maxTimestamp, since int64, success, fail int) error {
-	log.Printf("Batch Complete. Success: %d, Failed: %d", success, fail)
+	log.Printf("Batch Complete. Ingestion Requests Sent: %d, Failed: %d", success, fail)
 
-	// SAFETY CHECK: Only update watermark if ALL books succeeded.
-	// This prevents data loss where an older book fails but a newer one succeeds,
-	// causing the watermark to skip the failed book in future runs.
 	if fail > 0 {
-		log.Printf("Batch contained %d failures. NOT updating watermark to prevent data loss. Successful items are marked individually.", fail)
-		// We still save the processed IDs.
+		log.Printf("Batch contained %d failures. NOT updating watermark.", fail)
 	} else if maxTimestamp > since {
 		if err := s.state.UpdateWatermark(maxTimestamp); err != nil {
-			log.Printf("WARNING: Failed to update watermark in memory: %v", err)
+			log.Printf("WARNING: Failed to update watermark: %v", err)
 		}
 	}
 
-	// Persist state to disk
-	if err := s.state.Save(); err != nil {
-		return fmt.Errorf("failed to save state file: %w", err)
-	}
-
-	log.Printf("State saved. Watermark: %d", s.state.GetWatermark())
+	log.Printf("Current Watermark: %d", s.state.GetWatermark())
 	return nil
 }
 
-func (s *Service) processBook(ctx context.Context, book domain.BookMetadata) error {
+func (s *Service) processBook(ctx context.Context, book domain.BookMetadata) (string, error) {
 	var err error
+	var fileHash string
 	const maxRetries = 3
 
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
-			// Logic-level retry with exponential backoff
 			sleep := time.Duration(1<<i) * time.Second
 			log.Printf("Retrying book '%s' in %s...", book.Title, sleep)
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return "", ctx.Err()
 			case <-time.After(sleep):
 			}
 		}
 
-		err = s.processBookAttempt(ctx, book)
+		fileHash, err = s.processBookAttempt(ctx, book)
 		if err == nil {
-			log.Printf("Successfully ingested: %s", book.Title)
-			return nil
+			log.Printf("Successfully sent for ingestion: %s (Hash: %s)", book.Title, fileHash)
+			return fileHash, nil
 		}
 		log.Printf("Attempt %d/%d failed for book '%s': %v", i+1, maxRetries, book.Title, err)
 	}
-	return fmt.Errorf("after %d attempts: %w", maxRetries, err)
+	return "", fmt.Errorf("after %d attempts: %w", maxRetries, err)
 }
 
-func (s *Service) processBookAttempt(ctx context.Context, book domain.BookMetadata) error {
+func (s *Service) processBookAttempt(ctx context.Context, book domain.BookMetadata) (string, error) {
 	// A. Download
 	content, err := s.src.DownloadBookContent(ctx, book)
 	if err != nil {
-		return fmt.Errorf("download failed: %w", err)
+		return "", fmt.Errorf("download failed: %w", err)
 	}
 	defer content.Close()
 
 	// B. Send to Destination
-	if err := s.dest.Send(ctx, book, content); err != nil {
-		return fmt.Errorf("send failed: %w", err)
+	fileHash, err := s.dest.Send(ctx, book, content)
+	if err != nil {
+		return "", fmt.Errorf("send failed: %w", err)
 	}
 
-	return nil
+	return fileHash, nil
 }

@@ -3,33 +3,32 @@ package config
 import (
 	"fmt"
 	"log"
-	"sync"
+	"strings"
 	"time"
 
-	"github.com/caarlos0/env/v10"
-	"github.com/joho/godotenv"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
-	LogLevel string `env:"SCOUT_LOG_LEVEL" envDefault:"info"`
+	LogLevel string `mapstructure:"log_level"`
 
-	BookSourceType string `env:"SCOUT_BOOK_SOURCE_TYPE" envDefault:"opds"`
-	OPDSBaseURL    string `env:"SCOUT_OPDS_BASE_URL"`
-	OPDSUsername   string `env:"SCOUT_OPDS_USERNAME"`
-	OPDSPassword   string `env:"SCOUT_OPDS_PASSWORD"`
+	BookSourceType string `mapstructure:"book_source_type"`
+	OPDSBaseURL    string `mapstructure:"opds_base_url"`
+	OPDSUsername   string `mapstructure:"opds_username"`
+	OPDSPassword   string `mapstructure:"opds_password"`
 
-	APIBaseURL string `env:"SCOUT_API_BASE_URL" envDefault:"http://api:8080/api/v1"`
+	APIBaseURL string `mapstructure:"api_base_url"`
 
-	WorkerSinceTimestamp int64 `env:"SCOUT_WORKER_SINCE_TIMESTAMP" envDefault:"0"`
-	WorkerConcurrency    int   `env:"SCOUT_WORKER_CONCURRENCY" envDefault:"5"`
-	WorkerBatchSize      int   `env:"SCOUT_WORKER_BATCH_SIZE" envDefault:"0"`
-	WorkerDelayMS        int   `env:"SCOUT_WORKER_DELAY_MS" envDefault:"500"`
+	WorkerSinceTimestamp int64 `mapstructure:"worker_since_timestamp"`
+	WorkerConcurrency    int   `mapstructure:"worker_concurrency"`
+	WorkerBatchSize      int   `mapstructure:"worker_batch_size"`
+	WorkerDelayMS        int   `mapstructure:"worker_delay_ms"`
 
-	MaxBookSizeBytes int64 `env:"SCOUT_MAX_BOOK_SIZE_BYTES" envDefault:"52428800"`
+	MaxBookSizeBytes int64 `mapstructure:"max_book_size_bytes"`
 
-	WorkerTimeoutStr string `env:"SCOUT_WORKER_TIMEOUT" envDefault:"1h"`
+	WorkerTimeoutStr string `mapstructure:"worker_timeout"`
 
-	StateFilePath string `env:"SCOUT_STATE_FILE_PATH" envDefault:"scout_state.json"`
+	StateFilePath string `mapstructure:"state_file_path"`
 }
 
 func (c *Config) GetWorkerTimeout() time.Duration {
@@ -61,21 +60,36 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-var (
-	cfg  *Config
-	once sync.Once
-)
+func LoadConfig() (*Config, error) {
+	v := viper.New()
 
-func GetConfig() *Config {
-	once.Do(func() {
-		_ = godotenv.Load()
-		cfg = &Config{}
-		if err := env.Parse(cfg); err != nil {
-			log.Fatalf("failed to parse config: %v", err)
-		}
-		if err := cfg.Validate(); err != nil {
-			log.Fatalf("config validation failed: %v", err)
-		}
-	})
-	return cfg
+	v.SetEnvPrefix("SCOUT")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	// Set Defaults
+	v.SetDefault("log_level", "info")
+	v.SetDefault("book_source_type", "opds")
+	v.SetDefault("opds_base_url", "")
+	v.SetDefault("opds_username", "")
+	v.SetDefault("opds_password", "")
+	v.SetDefault("api_base_url", "http://api:8080/api/v1")
+	v.SetDefault("worker_since_timestamp", 0)
+	v.SetDefault("worker_concurrency", 5)
+	v.SetDefault("worker_batch_size", 0)
+	v.SetDefault("worker_delay_ms", 500)
+	v.SetDefault("max_book_size_bytes", 52428800)
+	v.SetDefault("worker_timeout", "1h")
+	v.SetDefault("state_file_path", "scout_state.db")
+
+	var c Config
+	if err := v.Unmarshal(&c); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	return &c, nil
 }

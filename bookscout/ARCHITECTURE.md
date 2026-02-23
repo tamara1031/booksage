@@ -6,13 +6,16 @@ BookScout is a lightweight, stateful collection worker designed to pull document
 
 ### Responsibilities
 - **Extract (Fetch):** Periodically polls remote sources for new content.
-- **Filter (State):** Uses a local state store to track processed items and prevent duplicates.
-- **Load (Push):** Downloads content and uploads it to the BookSage API (`/api/v1/ingest`).
+- **Filter (State):** Uses a local SQLite state store to track processed items and prevent duplicates.
+- **Load (Push):** Downloads content, calculates SHA-256 hash, and uploads it to the BookSage API (`/api/v1/ingest`).
+- **Sync (Status):** Polls BookSage API for the status of asynchronous ingestion tasks.
 
 ### Tech Stack
 - **Language:** Go 1.25.7
 - **Deployment:** Docker / Kubernetes CronJob
-- **State:** Local JSON file (persistent volume)
+- **State:** SQLite 3 (managed by Bun ORM)
+- **Config:** Viper (Environment variables & Defaults)
+- **CLI:** Cobra
 
 ### Boundary
 BookScout operates as an external client to BookSage. It does not share databases or internal logic. Communication is strictly via the public REST API.
@@ -25,7 +28,7 @@ graph LR
 
     subgraph BookScout["BookScout Worker"]
         Worker[Worker Service]
-        State[(State Store)]
+        State[(SQLite Store)]
     end
 
     subgraph BookSage["BookSage System"]
@@ -33,8 +36,9 @@ graph LR
     end
 
     OPDS -->|Pull XML| Worker
-    Worker <-->|Read/Write Watermark| State
-    Worker -->|Push Multipart/Form| API
+    Worker <-->|Read/Write Watermark & Status| State
+    Worker -->|Push Multipart + SHA256| API
+    Worker <--|Poll Status by Hash| API
 ```
 
 ## 2. Class Design (構造の可視化)
@@ -57,15 +61,18 @@ classDiagram
 
     class BookDestination {
         <<interface>>
-        +Send(ctx, book, content) error
+        +Send(ctx, book, content) (string hash, error)
+        +GetStatusByHash(ctx, hash) (status, error)
     }
 
     class StateStore {
         <<interface>>
         +GetWatermark() int64
         +IsProcessed(id) bool
-        +MarkProcessed(id) error
-        +Save() error
+        +UpdateWatermark(timestamp) error
+        +GetProcessingDocuments() []TrackedDoc
+        +UpdateStatusByHash(hash, status, err) error
+        +RecordIngestion(id, hash) error
     }
 
     class OPDSAdapter {
@@ -78,12 +85,13 @@ classDiagram
         -client HttpClient
         -baseURL string
         +Send()
+        +GetStatusByHash()
     }
 
-    class FileStateStore {
-        -filepath string
-        -state StateData
-        +Save()
+    class SQLiteStateStore {
+        -db *sql.DB
+        +RecordIngestion()
+        +GetProcessingDocuments()
     }
 
     WorkerService --> BookSource
@@ -92,23 +100,36 @@ classDiagram
 
     OPDSAdapter ..|> BookSource
     BookSageAPIAdapter ..|> BookDestination
-    FileStateStore ..|> StateStore
+    SQLiteStateStore ..|> StateStore
 ```
 
 ## 3. Ingest Sequence (ふるまいの可視化)
 
-The ingestion process is designed to be idempotent and robust against partial failures.
+The ingestion process is split into two phases to handle asynchronous API processing reliably.
 
+### Phase 1: Status Sync
 ```mermaid
 sequenceDiagram
-    participant C as CronJob/Main
     participant W as WorkerService
-    participant S as StateStore
-    participant O as OPDS Source
+    participant S as SQLite Store
     participant B as BookSage API
 
-    C->>W: Run(ctx)
-    activate W
+    W->>S: GetProcessingDocuments()
+    S-->>W: [HashA, HashB, ...]
+    loop For Each Hash
+        W->>B: GetStatus(Hash)
+        B-->>W: status: "completed"
+        W->>S: UpdateStatusByHash(Hash, COMPLETED)
+    end
+```
+
+### Phase 2: Scrape & Ingest
+```mermaid
+sequenceDiagram
+    participant W as WorkerService
+    participant S as SQLite Store
+    participant O as OPDS Source
+    participant B as BookSage API
 
     W->>S: GetWatermark()
     S-->>W: lastTimestamp
@@ -118,23 +139,16 @@ sequenceDiagram
 
     loop For Each Book (Concurrent)
         W->>S: IsProcessed(BookID)?
-        alt Already Processed
-            S-->>W: true (Skip)
-        else New Book
+        alt New Book
             S-->>W: false
-
             W->>O: DownloadBookContent(Book)
             O-->>W: Stream<Content>
-
-            W->>B: Send(BookMetadata + Content)
-            B-->>W: 200 OK
-
-            W->>S: MarkProcessed(BookID)
+            W->>B: Send(Metadata + Content)
+            Note right of W: Calculates SHA-256 locally
+            B-->>W: 202 Accepted
+            W->>S: RecordIngestion(BookID, Hash, PROCESSING)
         end
     end
 
     W->>S: UpdateWatermark(newMaxTimestamp)
-    W->>S: Save()
-
-    deactivate W
 ```

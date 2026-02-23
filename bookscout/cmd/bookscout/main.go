@@ -11,19 +11,38 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/spf13/cobra"
 )
 
+var rootCmd = &cobra.Command{
+	Use:   "bookscout",
+	Short: "BookScout is a worker that scrapes books and sends them to BookSage API",
+	Run: func(cmd *cobra.Command, args []string) {
+		runWorker()
+	},
+}
+
 func main() {
-	cfg := config.GetConfig()
+	if err := rootCmd.Execute(); err != nil {
+		log.Fatalf("Execution failed: %v", err)
+	}
+}
+
+func runWorker() {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
 	// Initialize State Store
-	state, err := tracker.NewFileStateStore(cfg.StateFilePath)
+	state, err := tracker.NewSQLiteStateStore(cfg.StateFilePath)
 	if err != nil {
 		log.Fatalf("Failed to initialize state store: %v", err)
 	}
+	defer state.Close()
 
 	// Initialize Adapters
-	// Check source type if needed, but for now defaults to OPDS as per config logic
 	src := scraper.NewOPDSAdapter(
 		cfg.OPDSBaseURL,
 		cfg.OPDSUsername,
@@ -37,14 +56,14 @@ func main() {
 	// Initialize Service
 	svc := worker.NewService(cfg, src, dest, state)
 
-	// Context with timeout (configurable max for batch execution)
+	// Context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.GetWorkerTimeout())
 	defer cancel()
 
 	// Handle graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 		<-sigChan
 		log.Println("Received shutdown signal, cancelling context...")
 		cancel()

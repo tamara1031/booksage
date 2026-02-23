@@ -1,5 +1,5 @@
-from booksage.adapters.etl import DoclingParser
-from booksage.domain import DocumentMetadata, RawDocument
+from booksage.parser import DoclingParser
+from booksage.models import DocumentMetadata, RawDocument
 
 
 def test_integration_parser_to_domain():
