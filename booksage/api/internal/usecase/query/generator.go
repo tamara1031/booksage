@@ -14,6 +14,7 @@ type Generator struct {
 	llm       domain.LLMClient
 	retriever *FusionRetriever
 	critique  *SelfRAGCritique
+	router    *AdaptiveRouter
 }
 
 // NewGenerator initializes the Agentic Generator with the necessary routing logic.
@@ -22,6 +23,7 @@ func NewGenerator(llm domain.LLMClient, retriever *FusionRetriever) *Generator {
 		llm:       llm,
 		retriever: retriever,
 		critique:  NewSelfRAGCritique(llm),
+		router:    NewAdaptiveRouter(llm),
 	}
 }
 
@@ -31,66 +33,108 @@ type GeneratorEvent struct {
 	Content string `json:"content"`
 }
 
-// GenerateAnswer orchestrates the full RAG pipeline:
+// GenerateAnswer orchestrates the full Adaptive RAG pipeline:
+// 0. Query Routing (Intent Classification)
 // 1. LightRAG Extraction & Parallel Retrieval (handled by FusionRetriever)
 // 2. Skyline Fusion (handled by FusionRetriever)
 // 3. Context-aware answer generation
-// 4. Self-RAG: critique generation grounding
+// 4. Reflexion Loop (Self-RAG Critique -> Re-Retrieval)
 // Results are streamed via SSE events through the provided channel.
 func (g *Generator) GenerateAnswer(ctx context.Context, query string, stream chan<- GeneratorEvent) {
 	defer close(stream)
 	log.Printf("[Agent] Starting generation for query: %s", query)
 
-	// Step 1: Retrieval (includes LightRAG extraction, Parallel Search, Reranking, Skyline Fusion)
-	stream <- GeneratorEvent{Type: "reasoning", Content: "[Agent] Retrieving context (LightRAG + Parallel Search)..."}
-
-	var allContextChunks []string
-	if g.retriever != nil {
-		results, err := g.retriever.Retrieve(ctx, query)
-		if err != nil {
-			stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Fusion] Retrieval warning: %v", err)}
-		} else {
-			for _, r := range results {
-				allContextChunks = append(allContextChunks, r.Content)
-				stream <- GeneratorEvent{
-					Type:    "source",
-					Content: fmt.Sprintf("[%s] (score: %.2f) %s", r.Source, r.Score, truncate(r.Content, 200)),
-				}
-			}
-			stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Agent] %d Pareto-optimal context chunks selected.", len(allContextChunks))}
-		}
-	} else {
-		stream <- GeneratorEvent{Type: "reasoning", Content: "[Agent] No retriever configured. Generating without context."}
-	}
-
-	// Step 2: Context-aware Generation
-	stream <- GeneratorEvent{Type: "reasoning", Content: "[Agent] Generating answer..."}
-
-	prompt := buildRAGPrompt(query, allContextChunks)
-	answer, err := g.llm.Generate(ctx, prompt)
+	// Step 0: Adaptive Routing
+	stream <- GeneratorEvent{Type: "reasoning", Content: "[Adaptive RAG] Classifying query intent..."}
+	intent, err := g.router.ClassifyIntent(ctx, query)
 	if err != nil {
-		stream <- GeneratorEvent{Type: "error", Content: fmt.Sprintf("generation failed: %v", err)}
+		stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Adaptive RAG] Warning: Intent classification failed (%v). Defaulting to Complex.", err)}
+		intent = IntentComplex
+	}
+	stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Adaptive RAG] Identified intent: %s", strings.ToUpper(string(intent)))}
+
+	if intent == IntentSimple {
+		// Fast path: Skip heavy retrieval
+		stream <- GeneratorEvent{Type: "reasoning", Content: "[Adaptive RAG] Routing to lightweight generation path."}
+		answer, err := g.llm.Generate(ctx, query)
+		if err != nil {
+			stream <- GeneratorEvent{Type: "error", Content: fmt.Sprintf("generation failed: %v", err)}
+			return
+		}
+		stream <- GeneratorEvent{Type: "answer", Content: answer}
 		return
 	}
 
-	// Step 3: Self-RAG — Generation Critique
-	if g.critique != nil && len(allContextChunks) > 0 {
-		contextJoined := strings.Join(allContextChunks, "\n\n")
-		support := g.critique.EvaluateGeneration(ctx, answer, contextJoined)
-		stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("[Self-RAG] Support level: %s", support)}
+	// Complex Path: Reflexion Loop
+	maxIterations := 3
+	currentQuery := query
+	var cumulativeContext []string
+	seenContent := make(map[string]bool)
+	var finalAnswer string
 
-		if support == NoSupport {
-			stream <- GeneratorEvent{Type: "reasoning", Content: "[Self-RAG] Answer not supported by context. Regenerating with strict constraints..."}
+	for i := 0; i < maxIterations; i++ {
+		iterLabel := fmt.Sprintf("[Reflexion Loop %d/%d]", i+1, maxIterations)
+		stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("%s Starting retrieval cycle...", iterLabel)}
 
-			answer, err = g.llm.Generate(ctx, prompt+"\n\nIMPORTANT: Base your answer STRICTLY on the provided context.")
+		// Step 1 & 2: Retrieval (Extraction + Search + Fusion)
+		if g.retriever != nil {
+			results, err := g.retriever.Retrieve(ctx, currentQuery)
 			if err != nil {
-				stream <- GeneratorEvent{Type: "error", Content: fmt.Sprintf("regeneration failed: %v", err)}
-				return
+				stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("%s Retrieval warning: %v", iterLabel, err)}
+			} else {
+				newChunks := 0
+				for _, r := range results {
+					if !seenContent[r.Content] {
+						cumulativeContext = append(cumulativeContext, r.Content)
+						seenContent[r.Content] = true
+						newChunks++
+						stream <- GeneratorEvent{
+							Type:    "source",
+							Content: fmt.Sprintf("[%s] (score: %.2f) %s", r.Source, r.Score, truncate(r.Content, 200)),
+						}
+					}
+				}
+				stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("%s Found %d new context chunks (Total: %d).", iterLabel, newChunks, len(cumulativeContext))}
 			}
 		}
+
+		// Step 3: Generation
+		stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("%s Generating draft answer...", iterLabel)}
+
+		prompt := buildRAGPrompt(query, cumulativeContext) // Use cumulative context
+		draftAnswer, err := g.llm.Generate(ctx, prompt)
+		if err != nil {
+			stream <- GeneratorEvent{Type: "error", Content: fmt.Sprintf("generation failed: %v", err)}
+			return
+		}
+
+		// Step 4: Critique & Reflexion
+		if g.critique != nil && len(cumulativeContext) > 0 {
+			// Check for missing context
+			sufficient, missingInfo := g.critique.EvaluateMissingContext(ctx, query, draftAnswer, strings.Join(cumulativeContext, "\n\n"))
+
+			if sufficient {
+				stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("%s Context sufficient. Finalizing answer.", iterLabel)}
+				finalAnswer = draftAnswer
+				break // Exit loop
+			}
+
+			// If missing context and not the last iteration
+			if !sufficient && i < maxIterations-1 {
+				stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("%s Critique: Missing information detected: '%s'. Re-retrieving...", iterLabel, missingInfo)}
+				// Update query for next iteration to specifically target missing info
+				currentQuery = fmt.Sprintf("%s. Specifically find information about: %s", query, missingInfo)
+				continue // Next iteration
+			} else if !sufficient {
+				stream <- GeneratorEvent{Type: "reasoning", Content: fmt.Sprintf("%s Max iterations reached. Proceeding with best effort.", iterLabel)}
+			}
+		}
+
+		finalAnswer = draftAnswer
+		break // Exit loop (default case or max iterations reached)
 	}
 
-	stream <- GeneratorEvent{Type: "answer", Content: answer}
+	stream <- GeneratorEvent{Type: "answer", Content: finalAnswer}
 	log.Printf("[Agent] Generation complete.")
 }
 
