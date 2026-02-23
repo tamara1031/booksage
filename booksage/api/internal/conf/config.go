@@ -26,6 +26,7 @@ type ModelConfig struct {
 	OllamaHost  string
 	OllamaLLM   string
 	OllamaEmbed string
+	InfinityURL string // URL for Infinity Tensor Engine
 }
 
 type DBConfig struct {
@@ -64,6 +65,7 @@ func Load() *Config {
 			OllamaHost:  getEnv("SAGE_MODEL_OLLAMA_HOST", "http://localhost:11434"),
 			OllamaLLM:   getEnv("SAGE_MODEL_OLLAMA_LLM", "llama3"),
 			OllamaEmbed: getEnv("SAGE_MODEL_OLLAMA_EMBED", "nomic-embed-text"),
+			InfinityURL: getEnv("SAGE_MODEL_INFINITY_URL", "http://localhost:7997"),
 		},
 		DB: DBConfig{
 			QdrantHost:       getEnv("SAGE_DB_QDRANT_HOST", "localhost"),

@@ -34,7 +34,7 @@ type SearchResult = ports.SearchResult
 type VectorRepository = ports.VectorRepository
 type GraphRepository = ports.GraphRepository
 type LLMClient = ports.LLMClient
-type EmbeddingClient = ports.EmbeddingClient
+type TensorEngine = ports.TensorEngine // Replaced EmbeddingClient
 type TaskType = ports.TaskType
 type LLMRouter = ports.LLMRouter
 

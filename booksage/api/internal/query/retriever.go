@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/booksage/booksage-api/internal/platform/embedding"
+	"github.com/booksage/booksage-api/internal/ports"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -16,19 +16,17 @@ import (
 type FusionRetriever struct {
 	vectorStore VectorRepository
 	graphStore  GraphRepository
-	embedder    *embedding.Batcher
-	router      *AdaptiveRouter
+	tensor      ports.TensorEngine // Replaces embedder, handles Embed & Rerank
 	extractor   *DualKeyExtractor
 	ranker      *SkylineRanker
 }
 
 // NewFusionRetriever creates a new FusionRetriever with repository interfaces.
-func NewFusionRetriever(vectorStore VectorRepository, graphStore GraphRepository, embedder *embedding.Batcher, llmRouter LLMRouter) *FusionRetriever {
+func NewFusionRetriever(vectorStore VectorRepository, graphStore GraphRepository, tensor ports.TensorEngine, llmRouter LLMRouter) *FusionRetriever {
 	return &FusionRetriever{
 		vectorStore: vectorStore,
 		graphStore:  graphStore,
-		embedder:    embedder,
-		router:      NewAdaptiveRouter(llmRouter),
+		tensor:      tensor,
 		extractor:   NewDualKeyExtractor(llmRouter),
 		ranker:      &SkylineRanker{},
 	}
@@ -38,11 +36,7 @@ func NewFusionRetriever(vectorStore VectorRepository, graphStore GraphRepository
 func (f *FusionRetriever) Retrieve(ctx context.Context, query string) ([]SearchResult, error) {
 	log.Printf("[Fusion] Starting SOTA parallel retrieval for: %s", query)
 
-	// 1. Adaptive Routing
-	strategy, _ := f.router.DetermineStrategy(ctx, query)
-	log.Printf("[Fusion] Strategy selected: %s", strategy)
-
-	// 2. Dual-level Key Extraction
+	// 1. Dual-level Key Extraction (LightRAG)
 	keys, _ := f.extractor.ExtractKeys(ctx, query)
 	log.Printf("[Fusion] Extracted Keys: Entities=%v, Themes=%v", keys.Entities, keys.Themes)
 
@@ -54,7 +48,7 @@ func (f *FusionRetriever) Retrieve(ctx context.Context, query string) ([]SearchR
 	var mu sync.Mutex
 	var allResults []SearchResult
 
-	// 3. Parallel Retrieval
+	// 2. Parallel Retrieval (1st-Stage)
 	// Engine A: Vector Search (Entities/Low-level)
 	g.Go(func() error {
 		log.Println("[Fusion] Dispatching Entity-based Vector Search...")
@@ -67,16 +61,17 @@ func (f *FusionRetriever) Retrieve(ctx context.Context, query string) ([]SearchR
 			mu.Lock()
 			allResults = append(allResults, docs...)
 			mu.Unlock()
+		} else {
+			log.Printf("[Fusion] Vector search warning: %v", err)
 		}
 		return nil
 	})
 
-	// Engine B: Graph Search (Structural context)
+	// Engine B: Graph Search (Structural context/Themes)
 	g.Go(func() error {
 		log.Println("[Fusion] Dispatching Graph/Theme Search...")
-		// Use themes for graph search if strategy is summary
 		searchTerm := query
-		if strategy == StrategySummary && len(keys.Themes) > 0 {
+		if len(keys.Themes) > 0 {
 			searchTerm = strings.Join(keys.Themes, " ")
 		}
 		docs, err := f.searchGraphDB(ctx, searchTerm)
@@ -84,6 +79,8 @@ func (f *FusionRetriever) Retrieve(ctx context.Context, query string) ([]SearchR
 			mu.Lock()
 			allResults = append(allResults, docs...)
 			mu.Unlock()
+		} else {
+			log.Printf("[Fusion] Graph search warning: %v", err)
 		}
 		return nil
 	})
@@ -92,35 +89,55 @@ func (f *FusionRetriever) Retrieve(ctx context.Context, query string) ([]SearchR
 		return nil, err
 	}
 
-	log.Printf("[Fusion] Retrieval complete. Integrating %d results via Skyline Ranker...", len(allResults))
-	return f.ranker.Rank(allResults), nil
-}
+	if len(allResults) == 0 {
+		return nil, nil
+	}
 
-// LastIntent returns the intent from the most recent classification (for SSE reporting).
-func (f *FusionRetriever) ClassifyIntent(ctx context.Context, query string) Strategy {
-	s, _ := f.router.DetermineStrategy(ctx, query)
-	return s
+	// 3. Tensor Reranking (2nd-Stage)
+	log.Printf("[Fusion] Reranking %d candidates via Infinity/ColBERT...", len(allResults))
+	if f.tensor != nil {
+		candidates := make([]string, len(allResults))
+		for i, r := range allResults {
+			candidates[i] = r.Content
+		}
+
+		scores, err := f.tensor.Rerank(ctx, query, candidates)
+		if err != nil {
+			log.Printf("[Fusion] Rerank warning: %v (using raw scores)", err)
+		} else {
+			// Update scores with high-fidelity tensor scores
+			for i := range allResults {
+				if i < len(scores) {
+					allResults[i].Score = scores[i]
+				}
+			}
+		}
+	}
+
+	// 4. Skyline Fusion (Pareto Optimal)
+	log.Printf("[Fusion] Integrating results via Skyline Ranker...")
+	return f.ranker.Rank(allResults), nil
 }
 
 // searchVectorDB queries Qdrant using dense vector similarity.
 func (f *FusionRetriever) searchVectorDB(ctx context.Context, query string) ([]SearchResult, error) {
-	if f.vectorStore == nil || f.embedder == nil {
-		return nil, fmt.Errorf("vector store or embedder not configured")
+	if f.vectorStore == nil || f.tensor == nil {
+		return nil, fmt.Errorf("vector store or tensor engine not configured")
 	}
 
 	// Generate query embedding
-	embResults, _, err := f.embedder.GenerateEmbeddingsBatched(ctx, []string{query}, "dense", "query")
+	embeddings, err := f.tensor.Embed(ctx, []string{query})
 	if err != nil {
 		return nil, fmt.Errorf("embedding generation failed: %w", err)
 	}
-	if len(embResults) == 0 || embResults[0].GetDense() == nil {
+	if len(embeddings) == 0 {
 		return nil, fmt.Errorf("no embedding result returned")
 	}
 
-	queryVector := embResults[0].GetDense().GetValues()
+	queryVector := embeddings[0]
 
 	// Search Vector Store
-	vectorResults, err := f.vectorStore.Search(ctx, queryVector, 5)
+	vectorResults, err := f.vectorStore.Search(ctx, queryVector, 10) // Fetch more for reranking
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +162,7 @@ func (f *FusionRetriever) searchGraphDB(ctx context.Context, query string) ([]Se
 		return nil, fmt.Errorf("graph store not configured")
 	}
 
-	results, err := f.graphStore.SearchChunks(ctx, query, 5)
+	results, err := f.graphStore.SearchChunks(ctx, query, 10) // Fetch more for reranking
 	if err != nil {
 		return nil, err
 	}

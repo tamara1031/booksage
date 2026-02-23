@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+
+	"github.com/booksage/booksage-api/internal/ports"
 )
 
 // SagaOrchestrator orchestrates the ingestion process ensuring consistency via the Saga pattern.
@@ -16,11 +18,10 @@ type SagaOrchestrator struct {
 	extractor      *GraphExtractor
 	entityResolver *EntityResolver
 	graphBuilder   *GraphBuilder
-	embedder       EmbeddingClient
 }
 
 // NewSagaOrchestrator creates a new ingestion orchestrator.
-func NewSagaOrchestrator(v VectorRepository, g GraphRepository, dr DocumentRepository, sr SagaRepository, router LLMRouter, embedder EmbeddingClient) *SagaOrchestrator {
+func NewSagaOrchestrator(v VectorRepository, g GraphRepository, dr DocumentRepository, sr SagaRepository, router LLMRouter, tensor ports.TensorEngine) *SagaOrchestrator {
 	return &SagaOrchestrator{
 		vectorStore:    v,
 		graphStore:     g,
@@ -28,9 +29,8 @@ func NewSagaOrchestrator(v VectorRepository, g GraphRepository, dr DocumentRepos
 		sagaRepo:       sr,
 		raptor:         NewRaptorBuilder(router),
 		extractor:      NewGraphExtractor(router),
-		entityResolver: NewEntityResolver(v, embedder),
+		entityResolver: NewEntityResolver(v, tensor),
 		graphBuilder:   NewGraphBuilder(),
-		embedder:       embedder,
 	}
 }
 
@@ -38,21 +38,9 @@ func NewSagaOrchestrator(v VectorRepository, g GraphRepository, dr DocumentRepos
 func (o *SagaOrchestrator) StartOrResumeIngestion(ctx context.Context, doc *Document) (*IngestSaga, error) {
 	// 1. Check if document exists by hash
 	existingDoc, err := o.docRepo.GetDocumentByHash(ctx, doc.FileHash)
-	if err != nil && err.Error() != "record not found" { // Assuming ErrNotFound maps to this string or check error type
-		// Wait, ErrNotFound was database.ErrNotFound.
-		// I need to define ErrNotFound in ingest/ports.go or handle it.
-		// Or assume repo returns nil, nil for not found?
-		// Let's assume err != nil means error.
-		// For now, I'll use strict error check if I can define it.
-		// Or just check if existingDoc is nil.
+	if err != nil && err.Error() != "record not found" {
 		return nil, err
 	}
-	// If error is "record not found", existingDoc is nil.
-	// I need to know how bunstore behaves.
-	// Usually it returns error.
-	// I will add `var ErrNotFound = errors.New("record not found")` to ports.go?
-	// And update bunstore to return it?
-	// Or just check error string for now to be safe.
 
 	if existingDoc != nil {
 		// Document exists, check for existing saga
@@ -231,8 +219,6 @@ func (o *SagaOrchestrator) GetDocumentStatus(ctx context.Context, hash []byte) (
 		return nil, err
 	}
 	if doc == nil {
-		// return nil, database.ErrNotFound
-		// Use standard error or custom
 		return nil, fmt.Errorf("record not found")
 	}
 	return o.sagaRepo.GetLatestSagaByDocumentID(ctx, doc.ID)

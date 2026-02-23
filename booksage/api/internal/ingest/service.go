@@ -6,6 +6,7 @@ import (
 	"log"
 
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
+	"github.com/booksage/booksage-api/internal/ports"
 )
 
 // Service defines the interface for ingestion operations.
@@ -13,22 +14,17 @@ type Service interface {
 	ProcessDocument(ctx context.Context, sagaID int64, docID string, parsedResp *pb.ParseResponse) error
 }
 
-// BatchEmbedder defines the interface for batched embedding generation.
-type BatchEmbedder interface {
-	GenerateEmbeddingsBatched(ctx context.Context, texts []string, embType, taskType string) ([]*pb.EmbeddingResult, int32, error)
-}
-
 // IngestionService implements the Service interface.
 type IngestionService struct {
 	sagaOrchestrator *SagaOrchestrator
-	embedBatcher     BatchEmbedder
+	tensor           ports.TensorEngine
 }
 
 // NewIngestionService creates a new IngestionService.
-func NewIngestionService(orchestrator *SagaOrchestrator, embedder BatchEmbedder) *IngestionService {
+func NewIngestionService(orchestrator *SagaOrchestrator, tensor ports.TensorEngine) *IngestionService {
 	return &IngestionService{
 		sagaOrchestrator: orchestrator,
-		embedBatcher:     embedder,
+		tensor:           tensor,
 	}
 }
 
@@ -40,8 +36,9 @@ func (s *IngestionService) ProcessDocument(ctx context.Context, sagaID int64, do
 		texts = append(texts, doc.Content)
 	}
 
-	// Generate Embeddings
-	embResults, _, err := s.embedBatcher.GenerateEmbeddingsBatched(ctx, texts, "dense", "retrieval")
+	// Generate Embeddings via TensorEngine (Infinity)
+	log.Printf("[IngestionService] Generating embeddings for %d chunks via Infinity...", len(texts))
+	embeddings, err := s.tensor.Embed(ctx, texts)
 	if err != nil {
 		log.Printf("[IngestionService] Failed to generate embeddings for %s: %v", docID, err)
 		return fmt.Errorf("embedding generation failed: %w", err)
@@ -49,11 +46,11 @@ func (s *IngestionService) ProcessDocument(ctx context.Context, sagaID int64, do
 
 	// Prepare Qdrant Chunks (with metadata from parse response)
 	var chunks []map[string]any
-	for i, res := range embResults {
+	for i, vec := range embeddings {
 		chunk := map[string]any{
 			"id":     fmt.Sprintf("%s-chunk-%d", docID, i),
-			"text":   res.Text,
-			"vector": res.GetDense().GetValues(),
+			"text":   texts[i],
+			"vector": vec,
 		}
 		// Propagate structural metadata from ParseResponse
 		if i < len(parsedResp.Documents) {
