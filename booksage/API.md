@@ -133,20 +133,10 @@ All gRPC requests MUST propagate a `correlation_id` via gRPC metadata to ensure 
 ### 2.1 `DocumentParserService`
 Handles the Heavy ETL workloads, extracting markdown texts and metadata from complex binaries.
 
-**RPC:** `Parse(stream ParseRequest) returns (ParseResponse)`
-- **Client Streaming:** The Go API breaks raw documents into chunks and streams them to the Worker to circumvent gRPC's 4MB limit constraint.
+**RPC:** `Parse(stream ParseRequest) returns (stream ParseResponse)`
+- **Bidirectional Streaming:** The Go API breaks raw documents into chunks and streams them to the Worker. The Worker streams back parsed chunks incrementally as they are processed.
 - **ParseRequest Payload:**
   - `metadata`: Sent initially.
   - `chunk_data`: Sequential file bytes.
 - **ParseResponse:** Returns unstructured metadata and a list of `RawDocument` messages (chunked structural elements translated to standard Markdown, optionally with page numbers).
 
-### 2.2 `EmbeddingService`
-Handles GPU/CPU heavy tensor calculations for embeddings.
-
-**RPC:** `GenerateEmbeddings(EmbeddingRequest) returns (EmbeddingResponse)`
-- **EmbeddingRequest:** Accepts an array of string `texts` to optimize for GPU batching. Specifies `embedding_type` (e.g. `dense`, `qdrant`) and `task_type`.
-- **EmbeddingResponse:** Returns the `total_tokens` processed and a list of `EmbeddingResult` messages.
-- **Vector Representations (OneOf):**
-  - `DenseVector`: Float array (e.g. 768 or 1536 dim).
-  - `SparseVector`: Index + Value array (e.g. SPLADE).
-  - `TensorVector`: Flattened multi-dimensional array with shapes (e.g. ColBERT token embeddings).

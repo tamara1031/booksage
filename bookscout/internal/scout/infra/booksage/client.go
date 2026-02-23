@@ -3,10 +3,7 @@ package booksage
 import (
 	"bookscout/internal/pkg/httpclient"
 	"bookscout/internal/scout/domain"
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,29 +36,36 @@ func NewAPIIngestor(baseURL string) *APIIngestor {
 type APIIngester = APIIngestor
 
 func (a *APIIngestor) Ingest(ctx context.Context, book domain.Book, content io.Reader) (string, error) {
-	var buf bytes.Buffer
-	tee := io.TeeReader(content, &buf)
-
-	hash := sha256.New()
-	if _, err := io.Copy(hash, tee); err != nil {
-		return "", err
-	}
-	fileHash := hex.EncodeToString(hash.Sum(nil))
-
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
 
 	go func() {
 		defer pw.Close()
-		md, _ := json.Marshal(book)
-		_ = writer.WriteField("metadata", string(md))
+		defer writer.Close()
+
+		md, err := json.Marshal(book)
+		if err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		if err := writer.WriteField("metadata", string(md)); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+
 		filename := filepath.Base(book.DownloadURL)
 		if filename == "" || filename == "." {
 			filename = fmt.Sprintf("%s.epub", book.ID)
 		}
-		part, _ := writer.CreateFormFile("file", filename)
-		_, _ = io.Copy(part, &buf)
-		_ = writer.Close()
+		part, err := writer.CreateFormFile("file", filename)
+		if err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		if _, err := io.Copy(part, content); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
 	}()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", a.baseURL+"/ingest", pr)
@@ -80,7 +84,18 @@ func (a *APIIngestor) Ingest(ctx context.Context, book domain.Book, content io.R
 		return "", fmt.Errorf("API error: %d", resp.StatusCode)
 	}
 
-	return fileHash, nil
+	var result struct {
+		Hash string `json:"hash"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if result.Hash == "" {
+		return "", fmt.Errorf("API response missing hash")
+	}
+
+	return result.Hash, nil
 }
 
 func (a *APIIngestor) GetStatusByHash(ctx context.Context, fileHash string) (string, string, error) {

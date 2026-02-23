@@ -191,6 +191,7 @@ func (h *IngestHandler) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"saga_id": saga.ID,
 		"status":  "processing",
+		"hash":    fmt.Sprintf("%x", fileHash),
 	})
 }
 
