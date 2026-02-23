@@ -14,7 +14,6 @@ type MockLLM struct {
 	intent           string
 	generateResponse string
 	critiqueMissing  bool
-	critiqueResponse string
 	extractionResp   string
 	callCount        int
 }
