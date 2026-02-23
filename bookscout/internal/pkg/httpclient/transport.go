@@ -1,4 +1,4 @@
-package util
+package httpclient
 
 import (
 	"bytes"
@@ -80,29 +80,39 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	var resp *http.Response
 
 	for i := 0; i <= t.MaxRetries; i++ {
-		// If it's not the first attempt, we need to handle potential body issues.
-		// For GET requests (Fetch/Download), req.Body is nil anyway.
+		// Before retrying, rewind body if needed
 		if i > 0 && req.Body != nil {
-			// We can't easily retry requests with streams.
-			// So we only retry if Body is nil or we have a way to reset it.
-			return base.RoundTrip(req)
+			if req.GetBody != nil {
+				newBody, err := req.GetBody()
+				if err != nil {
+					// Cannot rewind body, cannot retry.
+					return resp, lastErr
+				}
+				req.Body = newBody
+			} else {
+				// Cannot rewind body, cannot retry.
+				// We already failed in previous step.
+				return resp, lastErr
+			}
 		}
 
 		resp, lastErr = base.RoundTrip(req)
-		if lastErr != nil {
-			// Retry on network errors
-			time.Sleep(t.backoff(i))
-			continue
+
+		// If success and not 429/5xx, return immediately
+		if lastErr == nil && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
+			return resp, nil
 		}
 
-		if resp.StatusCode == http.StatusTooManyRequests || (resp.StatusCode >= 500 && resp.StatusCode <= 599) {
-			// Retry on 429 or 5xx
+		// Prepare for retry
+		if lastErr == nil {
+			// Close response body before retrying to prevent leak
 			resp.Body.Close()
-			time.Sleep(t.backoff(i))
-			continue
 		}
 
-		return resp, nil
+		// Don't sleep after the last attempt
+		if i < t.MaxRetries {
+			time.Sleep(t.backoff(i + 1))
+		}
 	}
 
 	return resp, lastErr

@@ -1,11 +1,11 @@
-package service_test
+package worker_test
 
 import (
-	"bookscout/internal/adapters/destination"
-	"bookscout/internal/adapters/tracker"
+	"bookscout/internal/client"
 	"bookscout/internal/config"
-	"bookscout/internal/core/domain/models"
-	"bookscout/internal/core/service"
+	"bookscout/internal/domain"
+	"bookscout/internal/tracker"
+	"bookscout/internal/worker"
 	"context"
 	"encoding/json"
 	"io"
@@ -17,20 +17,20 @@ import (
 	"time"
 )
 
-// mockBookSource implements ports.BookSource
+// mockBookSource implements worker.BookSource
 type mockBookSource struct {
-	books    []models.BookMetadata
+	books    []domain.BookMetadata
 	content  string
 	errFetch error
 	errDown  error
 }
 
-func (m *mockBookSource) FetchNewBooks(ctx context.Context, lastCheckTimestamp int64) ([]models.BookMetadata, error) {
+func (m *mockBookSource) FetchNewBooks(ctx context.Context, lastCheckTimestamp int64) ([]domain.BookMetadata, error) {
 	if m.errFetch != nil {
 		return nil, m.errFetch
 	}
 	// Simple filtering logic for test
-	var newBooks []models.BookMetadata
+	var newBooks []domain.BookMetadata
 	for _, b := range m.books {
 		if b.AddedAt.Unix() > lastCheckTimestamp {
 			newBooks = append(newBooks, b)
@@ -39,14 +39,14 @@ func (m *mockBookSource) FetchNewBooks(ctx context.Context, lastCheckTimestamp i
 	return newBooks, nil
 }
 
-func (m *mockBookSource) DownloadBookContent(ctx context.Context, book models.BookMetadata) (io.ReadCloser, error) {
+func (m *mockBookSource) DownloadBookContent(ctx context.Context, book domain.BookMetadata) (io.ReadCloser, error) {
 	if m.errDown != nil {
 		return nil, m.errDown
 	}
 	return io.NopCloser(strings.NewReader(m.content)), nil
 }
 
-func TestWorkerService_Run(t *testing.T) {
+func TestService_Run(t *testing.T) {
 	// 1. Mock Destination Server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/ingest" {
@@ -66,7 +66,7 @@ func TestWorkerService_Run(t *testing.T) {
 
 		// Verify metadata
 		metaStr := r.FormValue("metadata")
-		var meta models.BookMetadata
+		var meta domain.BookMetadata
 		if err := json.Unmarshal([]byte(metaStr), &meta); err != nil {
 			t.Errorf("invalid metadata json: %v", err)
 		}
@@ -103,7 +103,7 @@ func TestWorkerService_Run(t *testing.T) {
 	// 4. Setup Mock Source
 	now := time.Now()
 	mockSrc := &mockBookSource{
-		books: []models.BookMetadata{
+		books: []domain.BookMetadata{
 			{ID: "1", Title: "Book One", AddedAt: now.Add(-10 * time.Minute), DownloadURL: "http://example.com/1.epub"},
 			{ID: "2", Title: "Book Two", AddedAt: now.Add(-5 * time.Minute), DownloadURL: "http://example.com/2.epub"},
 		},
@@ -111,13 +111,13 @@ func TestWorkerService_Run(t *testing.T) {
 	}
 
 	// 5. Setup Destination Adapter
-	dest := destination.NewBookSageAPIAdapter(ts.URL)
+	dest := client.NewBookSageAPIAdapter(ts.URL)
 
 	// 6. Run Worker
-	svc := service.NewWorkerService(cfg, mockSrc, dest, state)
+	svc := worker.NewService(cfg, mockSrc, dest, state)
 
 	if err := svc.Run(context.Background()); err != nil {
-		t.Fatalf("WorkerService.Run failed: %v", err)
+		t.Fatalf("Service.Run failed: %v", err)
 	}
 
 	// 7. Verify State
