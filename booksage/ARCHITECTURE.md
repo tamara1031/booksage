@@ -229,13 +229,15 @@ sequenceDiagram
 ```
 
 ### 5.2 RAG Generation Flow
-This flow visualizes the new Two-Stage Retrieval pipeline, incorporating LightRAG keyword extraction, parallel search, and Skyline fusion.
+This flow visualizes the enhanced Adaptive RAG pipeline, incorporating Query Routing, Reflexion loops for missing context, and strict loop termination guards.
 
-1.  **Query Extraction (LightRAG)**: The system extracts "Low-level" (specific entities) and "High-level" (broad themes) keywords in a single pass, replacing iterative decomposition.
-2.  **Parallel Retrieval (1st-Stage)**: Using the extracted keys, the system queries the Vector DB (Qdrant) and Graph DB (Neo4j) concurrently.
-3.  **Tensor Reranking (2nd-Stage)**: Candidates are reranked using **Infinity (ColBERT)**, providing high-fidelity tensor scores.
-4.  **Skyline Fusion**: The **Skyline Ranker** merges vector scores and graph centrality using Pareto optimization to select the optimal context window.
-5.  **Self-RAG Critique**: The generation is self-evaluated; if the answer is unsupported by the context, the system regenerates with stricter constraints.
+1.  **Adaptive RAG (Query Routing)**:
+    - Before entering the retrieval pipeline, the system classifies the user's query intent (e.g., Simple vs. Complex).
+    - Lightweight queries bypass heavy retrieval, while complex queries trigger the full **Agentic RAG** workflow.
+2.  **Reflexion (Self-Correction Loop)**:
+    - During the Self-RAG critique phase, if the system detects **Missing Context**, it doesn't just regenerate the answer. Instead, it generates new, specific search keywords to fill the information gap.
+    - The process **backtracks to Step 1 (Retrieval)** with the augmented query history.
+    - **Guardrails**: To prevent infinite recursion, a strict **Max Iterations (e.g., 3)** limit is enforced. If the limit is reached, the system makes a best-effort generation.
 
 ```mermaid
 sequenceDiagram
@@ -243,8 +245,8 @@ sequenceDiagram
     actor User
     participant Server as API Server (SSE)
     participant Gen as Generator (Agentic RAG)
-    participant Ollama as Ollama (LLM Engine)
-    participant Inf as Infinity (Tensor/Vector Engine)
+    participant Ollama as Ollama (LLM/Router)
+    participant Inf as Infinity (Tensor/Vector)
     participant DB_V as Qdrant (Vector DB)
     participant DB_G as Neo4j (Graph DB)
     participant Sky as Skyline Ranker
@@ -254,52 +256,58 @@ sequenceDiagram
     Server->>Gen: GenerateAnswer(ctx, query, stream)
     activate Gen
 
-    %% Step 1: Query Extraction (LightRAG)
-    Gen->>Server: Stream Event (Reasoning: "Extracting keys...")
-    Gen->>Ollama: Generate(Prompt: Extract Low/High-level keys)
-    Ollama-->>Gen: Keys [Low: K1, K2..., High: T1, T2...]
+    %% Step 0: Query Routing (Adaptive RAG)
+    Gen->>Ollama: Classify Query Intent
+    Ollama-->>Gen: Route (e.g., Complex)
 
-    %% Step 2: Parallel 1st-Stage Retrieval
-    Gen->>Server: Stream Event (Reasoning: "1st-Stage Retrieval...")
-    par Vector Search
-        Gen->>Inf: Create Embeddings(Keys)
-        Inf-->>Gen: Dense Vectors
-        Gen->>DB_V: Search(Dense Vectors)
-        DB_V-->>Gen: Vector Candidates [V1, V2...]
-    and Graph Search
-        Gen->>DB_G: Traverse(Keys)
-        DB_G-->>Gen: Graph Candidates [G1, G2...]
+    loop Reflexion & Re-Retrieval (Max 3 Iterations)
+        %% Step 1: Query Extraction (LightRAG)
+        Gen->>Server: Stream Event (Reasoning: "Extracting keys...")
+        Gen->>Ollama: Generate(Prompt: Extract Keys & Missing Info)
+        Ollama-->>Gen: Keys [Low: K1..., High: T1...]
+
+        %% Step 2: Parallel 1st-Stage Retrieval
+        Gen->>Server: Stream Event (Reasoning: "1st-Stage Retrieval...")
+        par Vector Search
+            Gen->>Inf: Create Embeddings(Keys)
+            Inf-->>Gen: Dense Vectors
+            Gen->>DB_V: Search(Dense Vectors)
+            DB_V-->>Gen: Vector Candidates
+        and Graph Search
+            Gen->>DB_G: Traverse(Keys)
+            DB_G-->>Gen: Graph Candidates
+        end
+
+        %% Step 3: 2nd-Stage Tensor Reranking
+        Gen->>Server: Stream Event (Reasoning: "Reranking...")
+        Gen->>Inf: ColBERT Rerank(Query, Vector Candidates)
+        Inf-->>Gen: Reranked Candidates
+
+        %% Step 4: Skyline Fusion
+        Gen->>Sky: Rank(Reranked Vector, Graph)
+        Sky-->>Gen: Top-K Fused Context
+
+        %% Step 5: Generation
+        Gen->>Server: Stream Event (Reasoning: "Generating draft...")
+        Gen->>Ollama: Generate(Prompt: Context + Query)
+        Ollama-->>Gen: Draft Answer
+
+        %% Step 6: Critique & Reflexion
+        Gen->>Ollama: EvaluateGeneration(Draft Answer, Context)
+        Ollama-->>Gen: Evaluation (Sufficient / Missing Context)
+
+        alt Is Sufficient
+            Gen->>Server: Stream Event (Answer: Final Content)
+            break Proceed to finish
+                Gen->>Gen: End Loop
+            end
+        else Missing Context (Reflexion)
+            Gen->>Server: Stream Event (Reasoning: "Missing info, re-retrieving...")
+            Gen->>Gen: Append missing info to Query history
+            %% Loops back to Step 1
+        end
     end
 
-    %% Step 3: 2nd-Stage Tensor Reranking
-    Gen->>Server: Stream Event (Reasoning: "Reranking candidates...")
-    Gen->>Inf: ColBERT Rerank(Query, Vector Candidates)
-    Inf-->>Gen: Reranked Candidates with Tensor Scores
-
-    %% Step 4: Skyline Fusion (BookRAG)
-    Gen->>Sky: Rank(Reranked Vector Candidates, Graph Candidates)
-    activate Sky
-    Sky-->>Gen: Top-K Fused Context
-    deactivate Sky
-
-    Gen->>Server: Stream Event (Source: Fused Context Metadata)
-
-    %% Step 5: Generation
-    Gen->>Server: Stream Event (Reasoning: "Generating...")
-    Gen->>Ollama: Generate(Prompt: Context + Query)
-    Ollama-->>Gen: Draft Answer
-
-    %% Step 6: Self-RAG Critique
-    Gen->>Ollama: EvaluateGeneration(Draft Answer, Context)
-    Ollama-->>Gen: Support Level (Fully/Partially/None)
-
-    alt No Support
-        Gen->>Server: Stream Event (Reasoning: "Regenerating...")
-        Gen->>Ollama: Generate(Prompt: Strict Context Constraint)
-        Ollama-->>Gen: Final Answer
-    end
-
-    Gen->>Server: Stream Event (Answer: Final Content)
     deactivate Gen
     Server-->>User: Close Stream
     deactivate Server
