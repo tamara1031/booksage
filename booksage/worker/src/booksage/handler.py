@@ -7,7 +7,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import grpc
 
-from booksage.application.service import DocumentParser
+from booksage.parser import DocumentParser
 from booksage.pb.booksage.v1 import booksage_pb2, booksage_pb2_grpc
 
 
