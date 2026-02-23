@@ -56,7 +56,9 @@ type mockSagaRepo struct {
 	status SagaStatus
 }
 
-func (m *mockSagaRepo) CreateSaga(ctx context.Context, saga *IngestSaga) (int64, error) { return 1, nil }
+func (m *mockSagaRepo) CreateSaga(ctx context.Context, saga *IngestSaga) (int64, error) {
+	return 1, nil
+}
 func (m *mockSagaRepo) GetSagaByID(ctx context.Context, id int64) (*IngestSaga, error) {
 	return &IngestSaga{ID: id, Status: m.status}, nil
 }
@@ -89,8 +91,10 @@ func (m *mockRouter) RouteLLMTask(task TaskType) LLMClient { return &mockLLMClie
 
 type mockLLMClient struct{}
 
-func (m *mockLLMClient) Generate(ctx context.Context, prompt string) (string, error) { return "{}", nil }
-func (m *mockLLMClient) Name() string                                                { return "mock_llm" }
+func (m *mockLLMClient) Generate(ctx context.Context, prompt string) (string, error) {
+	return "{}", nil
+}
+func (m *mockLLMClient) Name() string { return "mock_llm" }
 
 func TestStartOrResumeIngestion_NewDoc(t *testing.T) {
 	orch := NewSagaOrchestrator(
