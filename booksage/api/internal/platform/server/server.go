@@ -19,7 +19,6 @@ import (
 	"github.com/booksage/booksage-api/internal/platform/llm"
 	neo4jpkg "github.com/booksage/booksage-api/internal/platform/neo4j"
 	qdrantpkg "github.com/booksage/booksage-api/internal/platform/qdrant"
-	"github.com/booksage/booksage-api/internal/ports"
 	"github.com/booksage/booksage-api/internal/query"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"github.com/uptrace/bun/driver/sqliteshim"
@@ -55,35 +54,8 @@ func (s *Server) Run() error {
 	// Initialize Dependencies (Dependency Injection)
 	// ==========================================
 
-	var geminiClient ports.LLMClient
-	if !s.cfg.Model.LocalOnly {
-		if s.cfg.Model.GeminiKey == "" {
-			log.Fatalf("[Error] SAGE_MODEL_GEMINI_KEY is not set and SAGE_MODEL_LOCAL_ONLY is false. Cannot start Orchestrator.")
-		}
-		var err error
-		geminiClient, err = llm.NewGeminiClient(ctx, s.cfg.Model.GeminiKey)
-		if err != nil {
-			return err
-		}
-	}
-
 	// Initialize Ollama Clients (LLM Only - Embedding is now handled by Infinity)
 	localLLMClient := llm.NewLocalOllamaClient(s.cfg.Model.OllamaHost, s.cfg.Model.OllamaLLM)
-
-	// Override Gemini with Local Client if requested
-	if s.cfg.Model.LocalOnly {
-		log.Println("[System] 🏠 SAGE_MODEL_LOCAL_ONLY is true. Overriding Gemini with Local Ollama.")
-		geminiClient = localLLMClient
-	}
-
-	// Initialize the LLM Router (Ollama for simple tasks, Gemini/Ollama for complex)
-	// Passing localLLMClient for both Embedding slots is fine as placeholder, but router logic should prioritize Infinity where applicable?
-	// Actually, Router still handles "simple keyword extraction" via LLM.
-	// Embedding task routing in Router might be obsolete if we inject TensorEngine directly.
-	// We'll keep it for now but note that EmbeddingClient usage is deprecated in favor of TensorEngine.
-	llmRouter := llm.NewRouter(localLLMClient, localLLMClient, geminiClient)
-	log.Printf("[System] 🛤️  LLM Router initialized (Cloud: %s | Local LLM: %s)",
-		geminiClient.Name(), localLLMClient.Name())
 
 	// Initialize Infinity Tensor Engine
 	tensorClient := infinity.NewClient(s.cfg.Model.InfinityURL)
@@ -129,16 +101,16 @@ func (s *Server) Run() error {
 	// --- Domain Services ---
 
 	// Saga Orchestrator (Updated to use TensorEngine)
-	sagaOrchestrator := ingest.NewSagaOrchestrator(qdrantClient, neo4jClient, bunStore, bunStore, llmRouter, tensorClient)
+	sagaOrchestrator := ingest.NewSagaOrchestrator(qdrantClient, neo4jClient, bunStore, bunStore, localLLMClient, tensorClient)
 
 	// Ingestion Service (Updated to use TensorEngine)
 	ingestService := ingest.NewIngestionService(sagaOrchestrator, tensorClient)
 
 	// Fusion Retriever (Uses Infinity for Tensors)
-	fusionRetriever := query.NewFusionRetriever(qdrantClient, neo4jClient, tensorClient, llmRouter)
+	fusionRetriever := query.NewFusionRetriever(qdrantClient, neo4jClient, tensorClient, localLLMClient)
 
 	// Agentic Generator
-	generator := query.NewGenerator(llmRouter, fusionRetriever)
+	generator := query.NewGenerator(localLLMClient, fusionRetriever)
 
 	// --- Handlers ---
 

@@ -44,8 +44,8 @@ func TestRetrieve_NilClients(t *testing.T) {
 
 func TestRetrieve_ParallelFlow(t *testing.T) {
 	// Arrange
-	mockRouter := &mockTaskRouter{client: &mockLLMClient{resp: "summary"}}
-	retriever := NewFusionRetriever(&mockQdrant{}, &mockNeo4j{}, nil, mockRouter)
+	mockLLM := &mockLLMClient{resp: "summary"}
+	retriever := NewFusionRetriever(&mockQdrant{}, &mockNeo4j{}, nil, mockLLM)
 
 	// Act
 	results, err := retriever.Retrieve(context.Background(), "test query")

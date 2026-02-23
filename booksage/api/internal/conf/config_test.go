@@ -9,16 +9,12 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	// Clear the environment block to test defaults
 	os.Clearenv()
-	_ = os.Setenv("SAGE_MODEL_GEMINI_KEY", "dummy")
 	_ = os.Setenv("SAGE_CLIENT_WORKER_ADDR", "localhost:50051")
 
 	cfg := Load()
 
 	if cfg.Client.WorkerAddr != "localhost:50051" {
 		t.Errorf("expected WorkerAddr to be localhost:50051, got %v", cfg.Client.WorkerAddr)
-	}
-	if cfg.Model.GeminiKey != "dummy" {
-		t.Errorf("expected GeminiKey to be dummy, got %v", cfg.Model.GeminiKey)
 	}
 	if cfg.Model.OllamaHost != "http://localhost:11434" {
 		t.Errorf("expected OllamaHost to be http://localhost:11434, got %v", cfg.Model.OllamaHost)
@@ -28,9 +24,6 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Model.OllamaEmbed != "nomic-embed-text" {
 		t.Errorf("expected OllamaEmbed to be nomic-embed-text, got %v", cfg.Model.OllamaEmbed)
-	}
-	if cfg.Model.LocalOnly != false {
-		t.Errorf("expected LocalOnly to be false, got %v", cfg.Model.LocalOnly)
 	}
 	if cfg.Timeout.Default != 30*time.Second {
 		t.Errorf("expected Default timeout to be 30s, got %v", cfg.Timeout.Default)
@@ -46,11 +39,9 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadWithEnvironmentVariables(t *testing.T) {
 	// Setup test environment variables
 	_ = os.Setenv("SAGE_CLIENT_WORKER_ADDR", "worker:50051")
-	_ = os.Setenv("SAGE_MODEL_GEMINI_KEY", "test-key")
 	_ = os.Setenv("SAGE_MODEL_OLLAMA_HOST", "http://ollama:11434")
 	_ = os.Setenv("SAGE_MODEL_OLLAMA_LLM", "llama2")
 	_ = os.Setenv("SAGE_MODEL_OLLAMA_EMBED", "all-minilm")
-	_ = os.Setenv("SAGE_MODEL_LOCAL_ONLY", "true")
 	_ = os.Setenv("SAGE_TIMEOUT_DEFAULT", "45")
 	_ = os.Setenv("SAGE_TIMEOUT_EMBEDDING", "10")
 	_ = os.Setenv("SAGE_TIMEOUT_PARSER", "120")
@@ -61,9 +52,6 @@ func TestLoadWithEnvironmentVariables(t *testing.T) {
 	if cfg.Client.WorkerAddr != "worker:50051" {
 		t.Errorf("expected WorkerAddr to be worker:50051, got %v", cfg.Client.WorkerAddr)
 	}
-	if cfg.Model.GeminiKey != "test-key" {
-		t.Errorf("expected GeminiKey to be test-key, got %v", cfg.Model.GeminiKey)
-	}
 	if cfg.Model.OllamaHost != "http://ollama:11434" {
 		t.Errorf("expected OllamaHost to be http://ollama:11434, got %v", cfg.Model.OllamaHost)
 	}
@@ -72,9 +60,6 @@ func TestLoadWithEnvironmentVariables(t *testing.T) {
 	}
 	if cfg.Model.OllamaEmbed != "all-minilm" {
 		t.Errorf("expected OllamaEmbed to be all-minilm, got %v", cfg.Model.OllamaEmbed)
-	}
-	if cfg.Model.LocalOnly != true {
-		t.Errorf("expected LocalOnly to be true, got %v", cfg.Model.LocalOnly)
 	}
 	if cfg.Timeout.Default != 45*time.Second {
 		t.Errorf("expected Default timeout to be 45s, got %v", cfg.Timeout.Default)
@@ -91,7 +76,6 @@ func TestLoadWithInvalidDuration(t *testing.T) {
 	os.Clearenv()
 	// Setup an invalid duration
 	_ = os.Setenv("SAGE_TIMEOUT_DEFAULT", "invalid")
-	_ = os.Setenv("SAGE_MODEL_GEMINI_KEY", "dummy")
 	_ = os.Setenv("SAGE_CLIENT_WORKER_ADDR", "dummy")
 	defer os.Clearenv()
 
@@ -103,34 +87,8 @@ func TestLoadWithInvalidDuration(t *testing.T) {
 	}
 }
 
-func TestGetEnvBoolEdgeCases(t *testing.T) {
-	os.Clearenv()
-	_ = os.Setenv("SAGE_MODEL_LOCAL_ONLY", "1")
-	_ = os.Setenv("SAGE_MODEL_GEMINI_KEY", "dummy")
-	_ = os.Setenv("SAGE_CLIENT_WORKER_ADDR", "dummy")
-	cfg := Load()
-	if !cfg.Model.LocalOnly {
-		t.Errorf("expected LocalOnly to be true for '1', got %v", cfg.Model.LocalOnly)
-	}
-
-	_ = os.Setenv("SAGE_MODEL_LOCAL_ONLY", "TRUE")
-	cfg = Load()
-	if !cfg.Model.LocalOnly {
-		t.Errorf("expected LocalOnly to be true for 'TRUE', got %v", cfg.Model.LocalOnly)
-	}
-
-	_ = os.Setenv("SAGE_MODEL_LOCAL_ONLY", "false")
-	cfg = Load()
-	if cfg.Model.LocalOnly {
-		t.Errorf("expected LocalOnly to be false for 'false', got %v", cfg.Model.LocalOnly)
-	}
-
-	defer os.Clearenv()
-}
-
 func TestLoadQdrantNeo4jDefaults(t *testing.T) {
 	os.Clearenv()
-	_ = os.Setenv("SAGE_MODEL_GEMINI_KEY", "dummy")
 	_ = os.Setenv("SAGE_CLIENT_WORKER_ADDR", "dummy")
 	defer os.Clearenv()
 
@@ -158,7 +116,6 @@ func TestLoadQdrantNeo4jDefaults(t *testing.T) {
 
 func TestLoadQdrantNeo4jOverrides(t *testing.T) {
 	os.Clearenv()
-	_ = os.Setenv("SAGE_MODEL_GEMINI_KEY", "dummy")
 	_ = os.Setenv("SAGE_CLIENT_WORKER_ADDR", "dummy")
 	_ = os.Setenv("SAGE_DB_QDRANT_HOST", "qdrant-host")
 	_ = os.Setenv("SAGE_DB_QDRANT_PORT", "6335")
@@ -192,7 +149,6 @@ func TestLoadQdrantNeo4jOverrides(t *testing.T) {
 
 func TestGetEnvIntInvalid(t *testing.T) {
 	os.Clearenv()
-	_ = os.Setenv("SAGE_MODEL_GEMINI_KEY", "dummy")
 	_ = os.Setenv("SAGE_CLIENT_WORKER_ADDR", "dummy")
 	_ = os.Setenv("SAGE_DB_QDRANT_PORT", "not-a-number")
 	defer os.Clearenv()
@@ -210,9 +166,6 @@ func TestValidate_MissingWorkerAddr(t *testing.T) {
 		Client: ClientConfig{
 			WorkerAddr: "",
 		},
-		Model: ModelConfig{
-			GeminiKey: "key",
-		},
 	}
 	err := cfg.Validate()
 	if err == nil {
@@ -220,33 +173,14 @@ func TestValidate_MissingWorkerAddr(t *testing.T) {
 	}
 }
 
-func TestValidate_MissingGeminiKey(t *testing.T) {
+func TestValidate_Success(t *testing.T) {
 	cfg := &Config{
 		Client: ClientConfig{
 			WorkerAddr: "localhost:50051",
-		},
-		Model: ModelConfig{
-			GeminiKey: "",
-			LocalOnly: false,
-		},
-	}
-	err := cfg.Validate()
-	if err == nil {
-		t.Error("expected validation error for missing Gemini key when not local-only")
-	}
-}
-
-func TestValidate_Success_LocalOnly(t *testing.T) {
-	cfg := &Config{
-		Client: ClientConfig{
-			WorkerAddr: "localhost:50051",
-		},
-		Model: ModelConfig{
-			LocalOnly: true,
 		},
 	}
 	err := cfg.Validate()
 	if err != nil {
-		t.Errorf("expected no error for local-only mode, got %v", err)
+		t.Errorf("expected no error for valid config, got %v", err)
 	}
 }

@@ -15,13 +15,7 @@ func (m *mockLLMClient) Generate(ctx context.Context, prompt string) (string, er
 }
 func (m *mockLLMClient) Name() string { return "mock" }
 
-type mockTaskRouter struct {
-	client LLMClient
-}
-
-func (m *mockTaskRouter) RouteLLMTask(task TaskType) LLMClient {
-	return m.client
-}
+// Router removed
 
 func TestAdaptiveRouter_DetermineStrategy(t *testing.T) {
 	tests := []struct {
@@ -50,7 +44,7 @@ func TestAdaptiveRouter_DetermineStrategy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
 			mockClient := &mockLLMClient{resp: tt.resp}
-			router := NewAdaptiveRouter(&mockTaskRouter{client: mockClient})
+			router := NewAdaptiveRouter(mockClient)
 
 			// Act
 			strategy, err := router.DetermineStrategy(context.Background(), "dummy query")

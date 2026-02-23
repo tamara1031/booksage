@@ -1,0 +1,27 @@
+# Binaries and build artifacts
+booksage-api
+main
+*.out
+coverage.out
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project specific
+api/booksage.db
+api/booksage-api
+api/coverage.out

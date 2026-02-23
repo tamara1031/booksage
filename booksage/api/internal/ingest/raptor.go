@@ -16,22 +16,20 @@ type RaptorNode struct {
 
 // RaptorBuilder orchestrates recursive summarization.
 type RaptorBuilder struct {
-	router LLMRouter
+	llm LLMClient
 }
 
 // NewRaptorBuilder creates a new RAPTOR builder.
-func NewRaptorBuilder(router LLMRouter) *RaptorBuilder {
-	return &RaptorBuilder{router: router}
+func NewRaptorBuilder(llm LLMClient) *RaptorBuilder {
+	return &RaptorBuilder{
+		llm: llm,
+	}
 }
 
 // BuildTree constructs a hierarchical summary tree based on document structure.
 // It returns a list of tree nodes to be inserted into Neo4j.
 func (b *RaptorBuilder) BuildTree(ctx context.Context, docID string, chunks []map[string]any) ([]map[string]any, []map[string]any, error) {
-	if b == nil || b.router == nil {
-		return nil, nil, nil
-	}
-	client := b.router.RouteLLMTask(TaskType("deep_summarization"))
-	if client == nil {
+	if b == nil || b.llm == nil {
 		return nil, nil, nil
 	}
 
@@ -56,7 +54,7 @@ func (b *RaptorBuilder) BuildTree(ctx context.Context, docID string, chunks []ma
 		if cType == "heading" {
 			// Summarize previous group before starting a new one
 			if len(currentGroup) > 0 {
-				summary, _ := b.summarizeGroup(ctx, client, currentGroup)
+				summary, _ := b.summarizeGroup(ctx, b.llm, currentGroup)
 				parentID := fmt.Sprintf("%s-tree-%s", docID, lastHeadingID)
 				treeNodes = append(treeNodes, map[string]any{
 					"id":    parentID,
@@ -76,7 +74,7 @@ func (b *RaptorBuilder) BuildTree(ctx context.Context, docID string, chunks []ma
 
 	// Final group
 	if len(currentGroup) > 0 {
-		summary, _ := b.summarizeGroup(ctx, client, currentGroup)
+		summary, _ := b.summarizeGroup(ctx, b.llm, currentGroup)
 		treeNodes = append(treeNodes, map[string]any{
 			"id":   fmt.Sprintf("%s-tree-last", docID),
 			"text": summary,

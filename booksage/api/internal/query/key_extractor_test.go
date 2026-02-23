@@ -36,7 +36,7 @@ func TestDualKeyExtractor_ExtractKeys(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
 			mockClient := &mockLLMClient{resp: tt.resp}
-			extractor := NewDualKeyExtractor(&mockTaskRouter{client: mockClient})
+			extractor := NewDualKeyExtractor(mockClient)
 
 			// Act
 			keys, err := extractor.ExtractKeys(context.Background(), "test query")

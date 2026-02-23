@@ -22,12 +22,12 @@ type FusionRetriever struct {
 }
 
 // NewFusionRetriever creates a new FusionRetriever with repository interfaces.
-func NewFusionRetriever(vectorStore VectorRepository, graphStore GraphRepository, tensor ports.TensorEngine, llmRouter LLMRouter) *FusionRetriever {
+func NewFusionRetriever(vectorStore VectorRepository, graphStore GraphRepository, tensor ports.TensorEngine, llm LLMClient) *FusionRetriever {
 	return &FusionRetriever{
 		vectorStore: vectorStore,
 		graphStore:  graphStore,
 		tensor:      tensor,
-		extractor:   NewDualKeyExtractor(llmRouter),
+		extractor:   NewDualKeyExtractor(llm),
 		ranker:      &SkylineRanker{},
 	}
 }

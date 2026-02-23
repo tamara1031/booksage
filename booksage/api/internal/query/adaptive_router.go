@@ -16,21 +16,17 @@ const (
 
 // AdaptiveRouter analyzes query intent to select the best retrieval strategy.
 type AdaptiveRouter struct {
-	router LLMRouter
+	llm LLMClient
 }
 
 // NewAdaptiveRouter creates a new router.
-func NewAdaptiveRouter(router LLMRouter) *AdaptiveRouter {
-	return &AdaptiveRouter{router: router}
+func NewAdaptiveRouter(llm LLMClient) *AdaptiveRouter {
+	return &AdaptiveRouter{llm: llm}
 }
 
 // DetermineStrategy uses an LLM to decide if the query requires a factual or summary-based approach.
 func (r *AdaptiveRouter) DetermineStrategy(ctx context.Context, query string) (Strategy, error) {
-	if r == nil || r.router == nil {
-		return StrategyFactual, nil
-	}
-	client := r.router.RouteLLMTask(TaskType("simple_keyword_extraction"))
-	if client == nil {
+	if r == nil || r.llm == nil {
 		return StrategyFactual, nil
 	}
 
@@ -39,7 +35,7 @@ Respond ONLY with one word: "factual" or "summary".
 
 Query: %s`, query)
 
-	resp, err := client.Generate(ctx, prompt)
+	resp, err := r.llm.Generate(ctx, prompt)
 	if err != nil {
 		// Fallback to factual if LLM fails
 		return StrategyFactual, nil

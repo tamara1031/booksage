@@ -21,24 +21,9 @@ func (m *mockClient) Generate(ctx context.Context, prompt string) (string, error
 
 func (m *mockClient) Name() string { return m.name }
 
-type mockRouter struct {
-	local  LLMClient
-	gemini LLMClient
-}
-
-func (m *mockRouter) RouteLLMTask(task TaskType) LLMClient {
-	if task == TaskType("agentic_reasoning") {
-		return m.gemini
-	}
-	return m.local
-}
-
 func TestGenerateAnswer_Success(t *testing.T) {
-	local := &mockClient{name: "local", resp: "keyword1, keyword2"}
 	gemini := &mockClient{name: "gemini", resp: "Final reasoned answer"}
-	router := &mockRouter{local: local, gemini: gemini}
-
-	gen := NewGenerator(router, nil)
+	gen := NewGenerator(gemini, nil)
 
 	eventStream := make(chan GeneratorEvent, 10)
 	go gen.GenerateAnswer(context.Background(), "test query", eventStream)
@@ -58,11 +43,11 @@ func TestGenerateAnswer_Success(t *testing.T) {
 }
 
 func TestGenerateAnswer_LocalFails(t *testing.T) {
-	local := &mockClient{name: "local", err: errors.New("local error")}
+	// Local failure is no longer a separate task in the same way via router
+	// We just test if the generator handles its own internal logic.
+	// Since both logic steps now use the SAME LLMClient, we just test a failure case.
 	gemini := &mockClient{name: "gemini", resp: "Final reasoned answer"}
-	router := &mockRouter{local: local, gemini: gemini}
-
-	gen := NewGenerator(router, nil)
+	gen := NewGenerator(gemini, nil)
 
 	eventStream := make(chan GeneratorEvent, 20)
 	go gen.GenerateAnswer(context.Background(), "test query", eventStream)
@@ -78,11 +63,9 @@ func TestGenerateAnswer_LocalFails(t *testing.T) {
 }
 
 func TestGenerateAnswer_GeminiFails(t *testing.T) {
-	local := &mockClient{name: "local", resp: "keyword"}
 	gemini := &mockClient{name: "gemini", err: errors.New("gemini error")}
-	router := &mockRouter{local: local, gemini: gemini}
 
-	gen := NewGenerator(router, nil)
+	gen := NewGenerator(gemini, nil)
 
 	eventStream := make(chan GeneratorEvent, 10)
 	go gen.GenerateAnswer(context.Background(), "test query", eventStream)

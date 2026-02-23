@@ -21,8 +21,6 @@ type ClientConfig struct {
 }
 
 type ModelConfig struct {
-	LocalOnly   bool
-	GeminiKey   string
 	OllamaHost  string
 	OllamaLLM   string
 	OllamaEmbed string
@@ -45,9 +43,6 @@ type TimeoutConfig struct {
 }
 
 func (c *Config) Validate() error {
-	if !c.Model.LocalOnly && c.Model.GeminiKey == "" {
-		return fmt.Errorf("SAGE_MODEL_GEMINI_KEY is required when SAGE_MODEL_LOCAL_ONLY is false")
-	}
 	if c.Client.WorkerAddr == "" {
 		return fmt.Errorf("SAGE_CLIENT_WORKER_ADDR is required")
 	}
@@ -60,8 +55,6 @@ func Load() *Config {
 			WorkerAddr: getEnv("SAGE_CLIENT_WORKER_ADDR", "localhost:50051"),
 		},
 		Model: ModelConfig{
-			LocalOnly:   getEnvBool("SAGE_MODEL_LOCAL_ONLY", false),
-			GeminiKey:   getEnv("SAGE_MODEL_GEMINI_KEY", ""),
 			OllamaHost:  getEnv("SAGE_MODEL_OLLAMA_HOST", "http://localhost:11434"),
 			OllamaLLM:   getEnv("SAGE_MODEL_OLLAMA_LLM", "llama3"),
 			OllamaEmbed: getEnv("SAGE_MODEL_OLLAMA_EMBED", "nomic-embed-text"),

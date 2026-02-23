@@ -1,4 +1,4 @@
-package ports
+package core
 
 import (
 	"context"
@@ -28,11 +28,6 @@ type TensorEngine interface {
 	// Rerank re-scores a list of documents against a query using a Cross-Encoder or ColBERT.
 	// It returns a list of scores corresponding to the input documents.
 	Rerank(ctx context.Context, query string, documents []string) ([]float32, error)
-}
-
-// LLMRouter defines the interface for routing tasks.
-type LLMRouter interface {
-	RouteLLMTask(task TaskType) LLMClient
 }
 
 // SearchResult represents a generic search result from any engine.

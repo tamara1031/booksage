@@ -36,7 +36,6 @@ type GraphRepository = ports.GraphRepository
 type LLMClient = ports.LLMClient
 type TensorEngine = ports.TensorEngine // Replaced EmbeddingClient
 type TaskType = ports.TaskType
-type LLMRouter = ports.LLMRouter
 
 const (
 	TaskEmbedding               = ports.TaskEmbedding

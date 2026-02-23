@@ -24,21 +24,17 @@ type Relation struct {
 
 // GraphExtractor handles entity/relation extraction and entity linking.
 type GraphExtractor struct {
-	router LLMRouter
+	llm LLMClient
 }
 
 // NewGraphExtractor creates a new extractor.
-func NewGraphExtractor(router LLMRouter) *GraphExtractor {
-	return &GraphExtractor{router: router}
+func NewGraphExtractor(llm LLMClient) *GraphExtractor {
+	return &GraphExtractor{llm: llm}
 }
 
 // ExtractEntitiesAndRelations uses an LLM to find entities and their connections in a chunk.
 func (e *GraphExtractor) ExtractEntitiesAndRelations(ctx context.Context, text string) ([]Entity, []Relation, error) {
-	if e == nil || e.router == nil {
-		return nil, nil, nil
-	}
-	client := e.router.RouteLLMTask(TaskType("simple_keyword_extraction"))
-	if client == nil {
+	if e == nil || e.llm == nil {
 		return nil, nil, nil
 	}
 
@@ -49,7 +45,7 @@ Relation: { "source": "...", "target": "...", "description": "..." }
 
 Text: %s`, text)
 
-	resp, err := client.Generate(ctx, prompt)
+	resp, err := e.llm.Generate(ctx, prompt)
 	if err != nil {
 		return nil, nil, fmt.Errorf("extraction failed: %w", err)
 	}

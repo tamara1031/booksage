@@ -21,14 +21,14 @@ type SagaOrchestrator struct {
 }
 
 // NewSagaOrchestrator creates a new ingestion orchestrator.
-func NewSagaOrchestrator(v VectorRepository, g GraphRepository, dr DocumentRepository, sr SagaRepository, router LLMRouter, tensor ports.TensorEngine) *SagaOrchestrator {
+func NewSagaOrchestrator(v VectorRepository, g GraphRepository, dr DocumentRepository, sr SagaRepository, llm LLMClient, tensor ports.TensorEngine) *SagaOrchestrator {
 	return &SagaOrchestrator{
 		vectorStore:    v,
 		graphStore:     g,
 		docRepo:        dr,
 		sagaRepo:       sr,
-		raptor:         NewRaptorBuilder(router),
-		extractor:      NewGraphExtractor(router),
+		raptor:         NewRaptorBuilder(llm),
+		extractor:      NewGraphExtractor(llm),
 		entityResolver: NewEntityResolver(v, tensor),
 		graphBuilder:   NewGraphBuilder(),
 	}

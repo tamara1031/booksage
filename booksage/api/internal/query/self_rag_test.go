@@ -27,7 +27,7 @@ func TestSelfRAGCritique_EvaluateRetrieval(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
 			mockClient := &mockLLMClient{resp: tt.resp}
-			critique := NewSelfRAGCritique(&mockTaskRouter{client: mockClient})
+			critique := NewSelfRAGCritique(mockClient)
 
 			// Act
 			isRelevant := critique.EvaluateRetrieval(context.Background(), "query", "context")
@@ -67,7 +67,7 @@ func TestSelfRAGCritique_EvaluateGeneration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
 			mockClient := &mockLLMClient{resp: tt.resp}
-			critique := NewSelfRAGCritique(&mockTaskRouter{client: mockClient})
+			critique := NewSelfRAGCritique(mockClient)
 
 			// Act
 			level := critique.EvaluateGeneration(context.Background(), "answer", "context")

@@ -9,17 +9,17 @@ import (
 
 // Generator is responsible for the Agentic RAG Generation loop (LightRAG, Self-RAG).
 type Generator struct {
-	router    LLMRouter
+	llm       LLMClient
 	retriever *FusionRetriever
 	critique  *SelfRAGCritique
 }
 
 // NewGenerator initializes the Agentic Generator with the necessary routing logic.
-func NewGenerator(router LLMRouter, retriever *FusionRetriever) *Generator {
+func NewGenerator(llm LLMClient, retriever *FusionRetriever) *Generator {
 	return &Generator{
-		router:    router,
+		llm:       llm,
 		retriever: retriever,
-		critique:  NewSelfRAGCritique(router),
+		critique:  NewSelfRAGCritique(llm),
 	}
 }
 
@@ -63,10 +63,9 @@ func (g *Generator) GenerateAnswer(ctx context.Context, query string, stream cha
 
 	// Step 2: Context-aware Generation
 	stream <- GeneratorEvent{Type: "reasoning", Content: "[Agent] Generating answer..."}
-	geminiClient := g.router.RouteLLMTask(TaskAgenticReasoning)
 
 	prompt := buildRAGPrompt(query, allContextChunks)
-	answer, err := geminiClient.Generate(ctx, prompt)
+	answer, err := g.llm.Generate(ctx, prompt)
 	if err != nil {
 		stream <- GeneratorEvent{Type: "error", Content: fmt.Sprintf("generation failed: %v", err)}
 		return
@@ -81,7 +80,7 @@ func (g *Generator) GenerateAnswer(ctx context.Context, query string, stream cha
 		if support == NoSupport {
 			stream <- GeneratorEvent{Type: "reasoning", Content: "[Self-RAG] Answer not supported by context. Regenerating with strict constraints..."}
 
-			answer, err = geminiClient.Generate(ctx, prompt+"\n\nIMPORTANT: Base your answer STRICTLY on the provided context.")
+			answer, err = g.llm.Generate(ctx, prompt+"\n\nIMPORTANT: Base your answer STRICTLY on the provided context.")
 			if err != nil {
 				stream <- GeneratorEvent{Type: "error", Content: fmt.Sprintf("regeneration failed: %v", err)}
 				return

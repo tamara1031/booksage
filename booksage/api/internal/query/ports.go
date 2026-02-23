@@ -26,6 +26,3 @@ const (
 	TaskDeepSummarization       = ports.TaskDeepSummarization
 	TaskMultimodalParsing       = ports.TaskMultimodalParsing
 )
-
-// LLMRouter defines the interface for routing tasks.
-type LLMRouter = ports.LLMRouter

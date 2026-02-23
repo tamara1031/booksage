@@ -85,9 +85,7 @@ func (m *mockTensorEngine) Rerank(ctx context.Context, query string, docs []stri
 	return make([]float32, len(docs)), nil
 }
 
-type mockRouter struct{}
-
-func (m *mockRouter) RouteLLMTask(task TaskType) LLMClient { return &mockLLMClient{} }
+// LLM is mockLLMClient directly now
 
 type mockLLMClient struct{}
 
@@ -102,7 +100,7 @@ func TestStartOrResumeIngestion_NewDoc(t *testing.T) {
 		&mockGraphRepo{},
 		&mockDocRepo{},
 		&mockSagaRepo{},
-		&mockRouter{},
+		&mockLLMClient{},
 		&mockTensorEngine{},
 	)
 
@@ -122,7 +120,7 @@ func TestRunIngestionSaga_Success(t *testing.T) {
 		&mockGraphRepo{},
 		&mockDocRepo{},
 		&mockSagaRepo{},
-		&mockRouter{},
+		&mockLLMClient{},
 		&mockTensorEngine{},
 	)
 
@@ -142,7 +140,7 @@ func TestRunIngestionSaga_VectorFail(t *testing.T) {
 		&mockGraphRepo{},
 		&mockDocRepo{},
 		&mockSagaRepo{},
-		&mockRouter{},
+		&mockLLMClient{},
 		&mockTensorEngine{},
 	)
 
@@ -162,7 +160,7 @@ func TestRunIngestionSaga_GraphFail(t *testing.T) {
 		&mockGraphRepo{shouldFail: true},
 		&mockDocRepo{},
 		&mockSagaRepo{},
-		&mockRouter{},
+		&mockLLMClient{},
 		&mockTensorEngine{},
 	)
 

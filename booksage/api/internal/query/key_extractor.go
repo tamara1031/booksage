@@ -15,21 +15,17 @@ type SearchKeys struct {
 
 // DualKeyExtractor extracts multi-level keys from a query using LightRAG strategy.
 type DualKeyExtractor struct {
-	router LLMRouter
+	llm LLMClient
 }
 
 // NewDualKeyExtractor creates a new extractor.
-func NewDualKeyExtractor(router LLMRouter) *DualKeyExtractor {
-	return &DualKeyExtractor{router: router}
+func NewDualKeyExtractor(llm LLMClient) *DualKeyExtractor {
+	return &DualKeyExtractor{llm: llm}
 }
 
 // ExtractKeys uses an LLM to identify specific entities and broader themes in the query.
 func (e *DualKeyExtractor) ExtractKeys(ctx context.Context, query string) (*SearchKeys, error) {
-	if e == nil || e.router == nil {
-		return &SearchKeys{Entities: []string{query}, Themes: []string{query}}, nil
-	}
-	client := e.router.RouteLLMTask(TaskType("simple_keyword_extraction"))
-	if client == nil {
+	if e == nil || e.llm == nil {
 		return &SearchKeys{Entities: []string{query}, Themes: []string{query}}, nil
 	}
 
@@ -41,7 +37,7 @@ Respond ONLY with a JSON object containing "entities" and "themes" arrays of str
 
 Query: %s`, query)
 
-	resp, err := client.Generate(ctx, prompt)
+	resp, err := e.llm.Generate(ctx, prompt)
 	if err != nil {
 		// Fallback on error
 		return &SearchKeys{Entities: []string{query}}, nil
