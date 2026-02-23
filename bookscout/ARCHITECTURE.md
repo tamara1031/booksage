@@ -41,31 +41,50 @@ graph LR
     Worker <--|Poll Status by Hash| API
 ```
 
-## 2. Class Design
+## 2. Architecture Layers (DDD)
 
-The architecture follows the Hexagonal Architecture (Ports & Adapters) pattern.
+BookScout follows a layered architecture to maintain clear boundaries and testability.
+
+### 2.1 Domain Layer (`internal/scout/domain`)
+The heart of the application, containing business logic and standard interfaces. It has zero external dependencies.
+- **`models.go`**: Core entities like `TrackedDocument` and value objects like `Book`.
+- **`interfaces.go`**: Defines the "contracts" for external communication (`Scraper`, `Ingestor`, `StateRepository`).
+
+### 2.2 Application Layer (`internal/scout/app`)
+Coordinates the flow of data between the domain and infrastructure.
+- **`worker.go`**: The primary orchestrator (`ScoutWorker`).
+- **`sync.go`**: Handles the Status Sync use case.
+- **`batch.go`**: Handles the Scrape & Ingest use case.
+
+### 2.3 Infrastructure Layer (`internal/scout/infra`)
+Concrete implementations of domain interfaces.
+- **`sqlite/`**: Persistent storage using Bun ORM.
+- **`booksage/`**: Adapter for the BookSage REST API.
+- **`opds/`**: Implementation of the OPDS catalog scraper.
+
+## 3. Class Design
 
 ```mermaid
 classDiagram
     direction TB
 
-    class WorkerService {
+    class ScoutWorker {
         +Run(ctx Context) error
     }
 
-    class BookSource {
+    class Scraper {
         <<interface>>
-        +FetchNewBooks(ctx, timestamp) []BookMetadata
-        +DownloadBookContent(ctx, book) ReadCloser
+        +Scrape(ctx, since) []Book
+        +DownloadContent(ctx, book) ReadCloser
     }
 
-    class BookDestination {
+    class Ingestor {
         <<interface>>
-        +Send(ctx, book, content) (string hash, error)
+        +Ingest(ctx, book, content) (string hash, error)
         +GetStatusByHash(ctx, hash) (status, error)
     }
 
-    class StateStore {
+    class StateRepository {
         <<interface>>
         +GetWatermark() int64
         +IsProcessed(id) bool
@@ -75,32 +94,31 @@ classDiagram
         +RecordIngestion(id, hash) error
     }
 
-    class OPDSAdapter {
+    class OPDSScraper {
         -client HttpClient
-        +FetchNewBooks()
-        +DownloadBookContent()
+        +Scrape()
+        +DownloadContent()
     }
 
-    class BookSageAPIAdapter {
+    class APIIngester {
         -client HttpClient
-        -baseURL string
-        +Send()
+        +Ingest()
         +GetStatusByHash()
     }
 
-    class SQLiteStateStore {
-        -db *sql.DB
+    class SQLiteRepository {
+        -db *bun.DB
         +RecordIngestion()
         +GetProcessingDocuments()
     }
 
-    WorkerService --> BookSource
-    WorkerService --> BookDestination
-    WorkerService --> StateStore
+    ScoutWorker --> Scraper
+    ScoutWorker --> Ingestor
+    ScoutWorker --> StateRepository
 
-    OPDSAdapter ..|> BookSource
-    BookSageAPIAdapter ..|> BookDestination
-    SQLiteStateStore ..|> StateStore
+    OPDSScraper ..|> Scraper
+    APIIngester ..|> Ingestor
+    SQLiteRepository ..|> StateRepository
 ```
 
 ## 3. Ingest Sequence
@@ -110,14 +128,14 @@ The ingestion process is split into two phases to handle asynchronous API proces
 ### Phase 1: Status Sync
 ```mermaid
 sequenceDiagram
-    participant W as WorkerService
-    participant S as SQLite Store
+    participant W as ScoutWorker
+    participant S as StateRepository
     participant B as BookSage API
 
     W->>S: GetProcessingDocuments()
     S-->>W: [HashA, HashB, ...]
     loop For Each Hash
-        W->>B: GetStatus(Hash)
+        W->>B: GetStatusByHash(Hash)
         B-->>W: status: "completed"
         W->>S: UpdateStatusByHash(Hash, COMPLETED)
     end
@@ -126,24 +144,24 @@ sequenceDiagram
 ### Phase 2: Scrape & Ingest
 ```mermaid
 sequenceDiagram
-    participant W as WorkerService
-    participant S as SQLite Store
+    participant W as ScoutWorker
+    participant S as StateRepository
     participant O as OPDS Source
     participant B as BookSage API
 
     W->>S: GetWatermark()
     S-->>W: lastTimestamp
 
-    W->>O: FetchNewBooks(since=lastTimestamp)
+    W->>O: Scrape(since=lastTimestamp)
     O-->>W: [Book1, Book2, ...]
 
     loop For Each Book (Concurrent)
         W->>S: IsProcessed(BookID)?
         alt New Book
             S-->>W: false
-            W->>O: DownloadBookContent(Book)
+            W->>O: DownloadContent(Book)
             O-->>W: Stream<Content>
-            W->>B: Send(Metadata + Content)
+            W->>B: Ingest(Metadata + Content)
             Note right of W: Calculates SHA-256 locally
             B-->>W: 202 Accepted
             W->>S: RecordIngestion(BookID, Hash, PROCESSING)

@@ -34,5 +34,23 @@ make test-worker-large
 ```
 
 ## Architecture
-- **Layout Parsing**: Uses [Docling](https://github.com/DS4SD/docling) for PDF/EPUB structure extraction.
-- **Concurrency**: Combines `asyncio` for gRPC/IO and `ProcessPoolExecutor` for CPU-heavy tasks.
+
+The worker implements a RAG pipeline across several specialized modules:
+
+- **gRPC Service**: Entry point for the BookSage API. It coordinates the ingestion saga.
+- **ETL Component**:
+  - **Docling Integration**: Advanced PDF/EPUB structure extraction.
+  - **Markdown Parsing**: Standardized intermediate format for all documents.
+- **Embedding & Search**:
+  - **Dense Embeddings**: High-dimensional vector representations.
+  - **Knowledge Graph**: (Optional/Experimental) Graph-based relationship extraction.
+- **Concurrency**: Combines `asyncio` for gRPC/IO and `ProcessPoolExecutor` for CPU-heavy mining/embedding tasks to ensure high throughput without blocking.
+
+## Deployment
+
+The worker is designed to run as a horizontal-scaled service in a Kubernetes cluster or via Docker Compose.
+
+```bash
+# Build Docker image
+docker build -t booksage-worker -f booksage/worker/Dockerfile .
+```
