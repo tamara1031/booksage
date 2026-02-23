@@ -8,6 +8,14 @@ This directory contains the core services for the BookSage system: the **Go API 
 
 The high-performance gateway and orchestration engine for the BookSage RAG system. Built with Go for superior concurrency and low-latency I/O.
 
+### Architecture
+
+The API Orchestrator follows a **Hexagonal Architecture** (Ports and Adapters) to ensure strict separation of concerns:
+- **Domain**: Pure business logic and entities (e.g., `Document`, `Saga`), free of external dependencies.
+- **Usecase**: Application-specific logic (e.g., `ingest`, `query`) orchestrating domain objects.
+- **Port**: Primary adapters (e.g., HTTP handlers).
+- **Infrastructure**: Secondary adapters (e.g., `BunStore` for SQLite/Postgres, `OllamaClient`).
+
 ### Key Responsibilities
 
 - **API Gateway**: Serving high-performance REST and SSE endpoints for real-time reasoning traces.

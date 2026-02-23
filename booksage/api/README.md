@@ -2,6 +2,13 @@
 
 The high-performance gateway and orchestration engine for the BookSage RAG system.
 
+### Architecture
+
+The API adheres to **Hexagonal Architecture** principles:
+- **Core (Domain)**: Pure business entities and logic, completely decoupled from infrastructure.
+- **Ports**: Interfaces defining entry points (HTTP) and expected behaviors (Repositories).
+- **Adapters (Infrastructure)**: Concrete implementations for Database (Bun/SQLite), LLMs (Ollama/Gemini), and Vector Stores.
+
 ### Configuration
 
 The API is configured via environment variables, categorized by domain (see the root [README.md](../README.md) for the full list):
