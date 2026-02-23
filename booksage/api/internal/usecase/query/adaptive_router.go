@@ -16,6 +16,14 @@ const (
 	StrategySummary Strategy = "summary" // Tree-based overview
 )
 
+// Intent defines the complexity of the query.
+type Intent string
+
+const (
+	IntentSimple  Intent = "simple"  // Greeting, factual lookup (lightweight)
+	IntentComplex Intent = "complex" // Reasoning, deep dive (full RAG)
+)
+
 // AdaptiveRouter analyzes query intent to select the best retrieval strategy.
 type AdaptiveRouter struct {
 	llm domain.LLMClient
@@ -49,4 +57,31 @@ Query: %s`, query)
 	}
 
 	return StrategyFactual, nil
+}
+
+// ClassifyIntent determines if a query is Simple (lightweight) or Complex (requires full RAG).
+func (r *AdaptiveRouter) ClassifyIntent(ctx context.Context, query string) (Intent, error) {
+	if r == nil || r.llm == nil {
+		return IntentComplex, nil // Default to full pipeline for safety
+	}
+
+	prompt := fmt.Sprintf(`Classify the following user query intent.
+- "simple": Basic greeting, exact factual lookup, or simple definition.
+- "complex": Requires reasoning, multiple sources, analysis, or deep dive.
+
+Respond ONLY with one word: "simple" or "complex".
+
+Query: %s`, query)
+
+	resp, err := r.llm.Generate(ctx, prompt)
+	if err != nil {
+		return IntentComplex, nil
+	}
+
+	resp = strings.ToLower(strings.TrimSpace(resp))
+	if strings.Contains(resp, "simple") {
+		return IntentSimple, nil
+	}
+
+	return IntentComplex, nil
 }

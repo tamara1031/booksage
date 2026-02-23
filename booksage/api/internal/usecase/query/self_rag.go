@@ -76,3 +76,41 @@ Answer: %s`, context, answer)
 		return NoSupport
 	}
 }
+
+// EvaluateMissingContext checks if the generated answer is sufficient based on the context.
+// If not sufficient, it returns (false, "What info is missing") to guide the next retrieval.
+func (c *SelfRAGCritique) EvaluateMissingContext(ctx context.Context, query, answer, context string) (bool, string) {
+	if c == nil || c.llm == nil {
+		return true, "" // Assume sufficient if critique fails
+	}
+
+	prompt := fmt.Sprintf(`Evaluate if the provided Context is SUFFICIENT to fully answer the Query.
+If sufficient, respond ONLY with "SUFFICIENT".
+If missing information, respond with "MISSING: <brief description of what specific information is missing to answer the query>".
+
+Query: %s
+Context: %s
+Generated Answer: %s`, query, context, answer)
+
+	resp, err := c.llm.Generate(ctx, prompt)
+	if err != nil {
+		return true, "" // Fail open
+	}
+
+	resp = strings.TrimSpace(resp)
+	if strings.HasPrefix(strings.ToUpper(resp), "SUFFICIENT") {
+		return true, ""
+	}
+
+	if strings.HasPrefix(strings.ToUpper(resp), "MISSING:") {
+		missingInfo := strings.TrimSpace(strings.TrimPrefix(resp, "MISSING:"))
+		return false, missingInfo
+	}
+
+	// Fallback check
+	if strings.Contains(strings.ToLower(resp), "missing") {
+		return false, resp
+	}
+
+	return true, ""
+}
