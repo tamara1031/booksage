@@ -15,7 +15,7 @@ def test_worker_startup():
     # Assuming we are in worker/ directory when running pytest
     cmd = ["python", "src/booksage/server.py"]
     env = os.environ.copy()
-    env["PYTHONPATH"] = "src"
+    env["PYTHONPATH"] = "src:gen"
 
     process = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
