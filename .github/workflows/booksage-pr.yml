@@ -1,4 +1,4 @@
-name: BookSage PR
+name: BookSage PR Optimized
 
 on:
   pull_request:
@@ -10,74 +10,201 @@ on:
       - 'deploy/**'
 
 jobs:
-  quality:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      worker: ${{ steps.filter.outputs.worker }}
+      proto: ${{ steps.filter.outputs.proto }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'booksage/api/**'
+              - 'booksage/go.mod'
+              - 'booksage/go.sum'
+              - 'Makefile'
+              - 'booksage/Makefile'
+              - '.github/workflows/booksage-pr.yml'
+              - 'deploy/**'
+            worker:
+              - 'booksage/worker/**'
+              - 'Makefile'
+              - 'booksage/Makefile'
+              - '.github/workflows/booksage-pr.yml'
+              - 'deploy/**'
+            proto:
+              - 'booksage/proto/**'
+
+  setup:
+    needs: changes
+    if: ${{ needs.changes.outputs.api == 'true' || needs.changes.outputs.worker == 'true' || needs.changes.outputs.proto == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.7'
+          go-version: '1.24.3'
+          cache: true
+          cache-dependency-path: booksage/api/go.sum
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "booksage/worker/uv.lock"
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           version: '29.3'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Go Binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: ${{ runner.os }}-go-bin-${{ hashFiles('booksage/Makefile') }}
+
       - name: Install Proto Plugins
         run: make proto-install-deps
+
       - name: Generate Proto
         run: make proto-gen
 
-      - name: Check Tidy
-        run: make tidy
+      - name: Upload Proto Artifacts (Go)
+        uses: actions/upload-artifact@v4
+        with:
+          name: proto-go
+          path: booksage/api/gen
+          retention-days: 1
 
-      # Check dirty status after tidy/proto-gen
-      - name: Verify Tidy Status
-        run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "Working directory is dirty. Please run 'make tidy' and 'make proto-gen' locally and commit."
-            git status
-            exit 1
-          fi
+      - name: Upload Proto Artifacts (Python)
+        uses: actions/upload-artifact@v4
+        with:
+          name: proto-python
+          path: booksage/worker/gen
+          retention-days: 1
+
+  lint-go:
+    needs: [changes, setup]
+    if: ${{ needs.changes.outputs.api == 'true' || needs.changes.outputs.proto == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.3'
+          cache: true
+          cache-dependency-path: booksage/api/go.sum
+
+      - name: Download Proto Artifacts (Go)
+        uses: actions/download-artifact@v4
+        with:
+          name: proto-go
+          path: booksage/api/gen
 
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.64.8
+          version: v1.64.5
           install-mode: goinstall
           working-directory: booksage/api
 
       - name: Run Lint
-        run: make -C booksage lint
+        run: make -C booksage lint-api
 
-  test-small:
-    needs: quality
+      - name: Check Tidy
+        run: make -C booksage tidy-api && git diff --exit-code
+
+  lint-python:
+    needs: [changes, setup]
+    if: ${{ needs.changes.outputs.worker == 'true' || needs.changes.outputs.proto == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.7'
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
         with:
-          version: '29.3'
-      - name: Install Proto Plugins
-        run: make proto-install-deps
-      - name: Generate Proto
-        run: make proto-gen
+          enable-cache: true
+          cache-dependency-glob: "booksage/worker/uv.lock"
+
+      - name: Download Proto Artifacts (Python)
+        uses: actions/download-artifact@v4
+        with:
+          name: proto-python
+          path: booksage/worker/gen
+
+      - name: Run Lint
+        run: make -C booksage lint-worker
+
+      - name: Check Tidy
+        run: make -C booksage tidy-worker && git diff --exit-code
+
+  test-go:
+    needs: [changes, setup]
+    if: ${{ needs.changes.outputs.api == 'true' || needs.changes.outputs.proto == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.3'
+          cache: true
+          cache-dependency-path: booksage/api/go.sum
+
+      - name: Download Proto Artifacts (Go)
+        uses: actions/download-artifact@v4
+        with:
+          name: proto-go
+          path: booksage/api/gen
+
       - name: Run Small Tests
-        run: make -C booksage test-small
+        run: make -C booksage test-api-small
+
+  test-python:
+    needs: [changes, setup]
+    if: ${{ needs.changes.outputs.worker == 'true' || needs.changes.outputs.proto == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "booksage/worker/uv.lock"
+
+      - name: Download Proto Artifacts (Python)
+        uses: actions/download-artifact@v4
+        with:
+          name: proto-python
+          path: booksage/worker/gen
+
+      - name: Run Small Tests
+        run: make -C booksage test-worker-small
