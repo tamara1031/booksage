@@ -11,6 +11,7 @@ import (
 // If running this test in isolation, ensure MockLLMClient is available.
 
 func TestAdaptiveRouter_DetermineStrategy(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		setupMock func() *MockLLMClient
@@ -79,7 +80,9 @@ func TestAdaptiveRouter_DetermineStrategy(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Arrange
 			ctx := context.Background()
 			if tt.name == "Context Timeout (Defaults to Factual)" {
@@ -106,6 +109,7 @@ func TestAdaptiveRouter_DetermineStrategy(t *testing.T) {
 }
 
 func TestAdaptiveRouter_NilSafety(t *testing.T) {
+	t.Parallel()
 	var router *AdaptiveRouter
 
 	strategy, err := router.DetermineStrategy(context.Background(), "query")

@@ -21,7 +21,8 @@ COPY proto /app/proto/
 COPY worker/src ./src
 
 # Generate Python stubs via grpc_tools
-RUN python -m grpc_tools.protoc -I/app/proto \
+RUN mkdir -p src/booksage/pb \
+    && python -m grpc_tools.protoc -I/app/proto \
     --python_out=src/booksage/pb \
     --grpc_python_out=src/booksage/pb \
     /app/proto/booksage/v1/booksage.proto \
