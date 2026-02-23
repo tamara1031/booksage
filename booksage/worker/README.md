@@ -2,14 +2,14 @@
 
 Dedicated ML/ETL backend for the BookSage system.
 
-## Configuration
+### Configuration
 
-The worker is configured via environment variables:
+The worker is configured via environment variables (prefixed with `SAGE_WORKER_`):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SAGE_WORKER_LISTEN_ADDR` | gRPC server listen address | `[::]:50051` |
-| `SAGE_WORKER_MAX_WORKERS` | Max CPU processes for layout parsing | CPU count |
+| `SAGE_WORKER_PORT` | gRPC listen address | `[::]:50051` |
+| `SAGE_WORKER_MAX_CONCURRENCY` | Max worker processes | CPU count |
 
 ## Development
 

@@ -20,25 +20,38 @@ The high-performance gateway and orchestration engine for the BookSage RAG syste
 
 ### Configuration
 
-The Orchestrator is configured via environment variables:
+The Orchestrator is configured via environment variables, categorized by domain:
 
+#### Client Settings
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SAGE_GEMINI_API_KEY` | Google Gemini API Key | Required (if local-only is false) |
-| `SAGE_OLLAMA_HOST` | Ollama Server URL | `http://localhost:11434` |
-| `SAGE_OLLAMA_LLM_MODEL` | Local LLM for light tasks (intent/keywords) | `llama3` |
-| `SAGE_OLLAMA_EMBED_MODEL` | Dedicated model for high-quality embeddings | `nomic-embed-text` |
-| `SAGE_USE_LOCAL_ONLY_LLM` | Force local-only execution | `false` |
-| `SAGE_WORKER_ADDR` | ML Worker gRPC address | `localhost:50051` |
-| `SAGE_DEFAULT_TIMEOUT_SEC` | Default request timeout in seconds | `30` |
-| `SAGE_EMBEDDING_TIMEOUT_SEC` | Embedding generation timeout in seconds | `5` |
-| `SAGE_PARSER_TIMEOUT_SEC` | Document parser timeout in seconds | `60` |
-| `SAGE_QDRANT_HOST` | Qdrant Vector DB host | `localhost` |
-| `SAGE_QDRANT_PORT` | Qdrant Vector DB port | `6334` |
-| `SAGE_QDRANT_COLLECTION` | Qdrant collection name | `booksage` |
-| `SAGE_NEO4J_URI` | Neo4j Graph DB URI | `neo4j://localhost:7687` |
-| `SAGE_NEO4J_USER` | Neo4j username | `neo4j` |
-| `SAGE_NEO4J_PASSWORD` | Neo4j password | `booksage_dev` |
+| `SAGE_CLIENT_WORKER_ADDR` | ML Worker gRPC address | `localhost:50051` |
+
+#### Model Settings
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SAGE_MODEL_GEMINI_KEY` | Google Gemini API Key | Required (if local-only is false) |
+| `SAGE_MODEL_OLLAMA_HOST` | Ollama Server URL | `http://localhost:11434` |
+| `SAGE_MODEL_OLLAMA_LLM` | Local LLM for light tasks (intent/keywords) | `llama3` |
+| `SAGE_MODEL_OLLAMA_EMBED` | Dedicated model for high-quality embeddings | `nomic-embed-text` |
+| `SAGE_MODEL_LOCAL_ONLY` | Force local-only execution | `false` |
+
+#### Database Settings
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SAGE_DB_QDRANT_HOST` | Qdrant Vector DB host | `localhost` |
+| `SAGE_DB_QDRANT_PORT` | Qdrant Vector DB port | `6334` |
+| `SAGE_DB_QDRANT_COLLECTION` | Qdrant collection name | `booksage` |
+| `SAGE_DB_NEO4J_URI` | Neo4j Graph DB URI | `neo4j://localhost:7687` |
+| `SAGE_DB_NEO4J_USER` | Neo4j username | `neo4j` |
+| `SAGE_DB_NEO4J_PASSWORD` | Neo4j password | `booksage_dev` |
+
+#### Timeout Settings
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SAGE_TIMEOUT_DEFAULT` | Default request timeout in seconds | `30` |
+| `SAGE_TIMEOUT_EMBEDDING` | Embedding generation timeout in seconds | `5` |
+| `SAGE_TIMEOUT_PARSER` | Document parser timeout in seconds | `60` |
 
 ### Setup & Development
 
@@ -65,8 +78,8 @@ The Worker is configured via environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SAGE_WORKER_LISTEN_ADDR` | Address the worker gRPC server listens on | `[::]:50051` |
-| `SAGE_WORKER_MAX_WORKERS` | Max concurrent processes for CPU-bound ETL | Number of CPU cores |
+| `SAGE_WORKER_PORT` | Address the worker gRPC server listens on | `[::]:50051` |
+| `SAGE_WORKER_MAX_CONCURRENCY` | Max concurrent processes for CPU-bound ETL | Number of CPU cores |
 
 ### Setup & Development
 

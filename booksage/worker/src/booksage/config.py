@@ -1,22 +1,21 @@
 import multiprocessing
-import os
-from dataclasses import dataclass
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-@dataclass
-class Config:
-    """Config holds all environmentally dependent settings for the BookSage Worker."""
+class WorkerSettings(BaseSettings):
+    """Configuration for the BookSage Worker."""
 
-    worker_listen_addr: str
-    max_workers: int
+    model_config = SettingsConfigDict(env_prefix="SAGE_WORKER_", case_sensitive=False)
 
-
-def load() -> Config:
-    """Load reads settings from environment variables with sensible defaults."""
-    workers_str = os.getenv("SAGE_WORKER_MAX_WORKERS", "")
-    max_workers = int(workers_str) if workers_str.isdigit() else multiprocessing.cpu_count()
-
-    return Config(
-        worker_listen_addr=os.getenv("SAGE_WORKER_LISTEN_ADDR", "[::]:50051"),
-        max_workers=max_workers,
+    port: str = Field(default="[::]:50051", description="gRPC server listen address")
+    max_concurrency: int = Field(
+        default_factory=lambda: multiprocessing.cpu_count(),
+        description="Maximum Number of CPU worker processes",
     )
+
+
+def load() -> WorkerSettings:
+    """Load settings from environment variables."""
+    return WorkerSettings()

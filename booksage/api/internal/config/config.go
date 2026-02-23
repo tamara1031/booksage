@@ -9,60 +9,75 @@ import (
 	"time"
 )
 
-// Config holds all environmentally dependent settings for the BookSage API.
 type Config struct {
-	WorkerAddr       string
-	GeminiAPIKey     string
-	OllamaHost       string
-	OllamaLLMModel   string
-	OllamaEmbedModel string
-	UseLocalOnlyLLM  bool
-	DefaultTimeout   time.Duration
-	EmbeddingTimeout time.Duration
-	ParserTimeout    time.Duration
+	Client  ClientConfig
+	Model   ModelConfig
+	DB      DBConfig
+	Timeout TimeoutConfig
+}
 
-	// Qdrant Vector DB
+type ClientConfig struct {
+	WorkerAddr string
+}
+
+type ModelConfig struct {
+	LocalOnly   bool
+	GeminiKey   string
+	OllamaHost  string
+	OllamaLLM   string
+	OllamaEmbed string
+}
+
+type DBConfig struct {
 	QdrantHost       string
 	QdrantPort       int
 	QdrantCollection string
-
-	// Neo4j Graph DB
-	Neo4jURI      string
-	Neo4jUser     string
-	Neo4jPassword string
+	Neo4jURI         string
+	Neo4jUser        string
+	Neo4jPassword    string
 }
 
-// Validate ensures that all required configuration is present and valid.
+type TimeoutConfig struct {
+	Default   time.Duration
+	Embedding time.Duration
+	Parser    time.Duration
+}
+
 func (c *Config) Validate() error {
-	if !c.UseLocalOnlyLLM && c.GeminiAPIKey == "" {
-		return fmt.Errorf("SAGE_GEMINI_API_KEY is required when SAGE_USE_LOCAL_ONLY_LLM is false")
+	if !c.Model.LocalOnly && c.Model.GeminiKey == "" {
+		return fmt.Errorf("SAGE_MODEL_GEMINI_KEY is required when SAGE_MODEL_LOCAL_ONLY is false")
 	}
-	if c.WorkerAddr == "" {
-		return fmt.Errorf("SAGE_WORKER_ADDR is required")
+	if c.Client.WorkerAddr == "" {
+		return fmt.Errorf("SAGE_CLIENT_WORKER_ADDR is required")
 	}
 	return nil
 }
 
-// Load reads settings from environment variables with sensible defaults.
 func Load() *Config {
 	cfg := &Config{
-		WorkerAddr:       getEnv("SAGE_WORKER_ADDR", "localhost:50051"),
-		GeminiAPIKey:     getEnv("SAGE_GEMINI_API_KEY", ""),
-		OllamaHost:       getEnv("SAGE_OLLAMA_HOST", "http://localhost:11434"),
-		OllamaLLMModel:   getEnv("SAGE_OLLAMA_LLM_MODEL", "llama3"),
-		OllamaEmbedModel: getEnv("SAGE_OLLAMA_EMBED_MODEL", "nomic-embed-text"),
-		UseLocalOnlyLLM:  getEnvBool("SAGE_USE_LOCAL_ONLY_LLM", false),
-		DefaultTimeout:   getEnvDuration("SAGE_DEFAULT_TIMEOUT_SEC", 30) * time.Second,
-		EmbeddingTimeout: getEnvDuration("SAGE_EMBEDDING_TIMEOUT_SEC", 5) * time.Second,
-		ParserTimeout:    getEnvDuration("SAGE_PARSER_TIMEOUT_SEC", 60) * time.Second,
-
-		QdrantHost:       getEnv("SAGE_QDRANT_HOST", "localhost"),
-		QdrantPort:       getEnvInt("SAGE_QDRANT_PORT", 6334),
-		QdrantCollection: getEnv("SAGE_QDRANT_COLLECTION", "booksage"),
-
-		Neo4jURI:      getEnv("SAGE_NEO4J_URI", "neo4j://localhost:7687"),
-		Neo4jUser:     getEnv("SAGE_NEO4J_USER", "neo4j"),
-		Neo4jPassword: getEnv("SAGE_NEO4J_PASSWORD", "booksage_dev"),
+		Client: ClientConfig{
+			WorkerAddr: getEnv("SAGE_CLIENT_WORKER_ADDR", "localhost:50051"),
+		},
+		Model: ModelConfig{
+			LocalOnly:   getEnvBool("SAGE_MODEL_LOCAL_ONLY", false),
+			GeminiKey:   getEnv("SAGE_MODEL_GEMINI_KEY", ""),
+			OllamaHost:  getEnv("SAGE_MODEL_OLLAMA_HOST", "http://localhost:11434"),
+			OllamaLLM:   getEnv("SAGE_MODEL_OLLAMA_LLM", "llama3"),
+			OllamaEmbed: getEnv("SAGE_MODEL_OLLAMA_EMBED", "nomic-embed-text"),
+		},
+		DB: DBConfig{
+			QdrantHost:       getEnv("SAGE_DB_QDRANT_HOST", "localhost"),
+			QdrantPort:       getEnvInt("SAGE_DB_QDRANT_PORT", 6334),
+			QdrantCollection: getEnv("SAGE_DB_QDRANT_COLLECTION", "booksage"),
+			Neo4jURI:         getEnv("SAGE_DB_NEO4J_URI", "neo4j://localhost:7687"),
+			Neo4jUser:        getEnv("SAGE_DB_NEO4J_USER", "neo4j"),
+			Neo4jPassword:    getEnv("SAGE_DB_NEO4J_PASSWORD", "booksage_dev"),
+		},
+		Timeout: TimeoutConfig{
+			Default:   getEnvDuration("SAGE_TIMEOUT_DEFAULT", 30) * time.Second,
+			Embedding: getEnvDuration("SAGE_TIMEOUT_EMBEDDING", 5) * time.Second,
+			Parser:    getEnvDuration("SAGE_TIMEOUT_PARSER", 60) * time.Second,
+		},
 	}
 
 	if err := cfg.Validate(); err != nil {

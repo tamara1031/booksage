@@ -2,13 +2,15 @@
 
 The high-performance gateway and orchestration engine for the BookSage RAG system.
 
-## Configuration
+### Configuration
 
-The API is configured via environment variables (see the root [README.md](../README.md) for the full list):
+The API is configured via environment variables, categorized by domain (see the root [README.md](../README.md) for the full list):
 
-- `SAGE_WORKER_ADDR`: ML Worker gRPC address.
-- `SAGE_USE_LOCAL_ONLY_LLM`: Set to `true` to use only local models (Ollama).
-- `SAGE_GEMINI_API_KEY`: Required if using Google Gemini.
+- `SAGE_CLIENT_WORKER_ADDR`: ML Worker gRPC address.
+- `SAGE_MODEL_LOCAL_ONLY`: Use only local models (Ollama).
+- `SAGE_MODEL_GEMINI_KEY`: API key for Google Gemini.
+- `SAGE_DB_QDRANT_HOST`: Qdrant Vector DB host.
+- `SAGE_TIMEOUT_DEFAULT`: Default request timeout.
 
 ## Development
 

@@ -19,7 +19,7 @@ async def serve():
     parser = DocumentParser()
 
     # Initialize the ProcessPoolExecutor for heavy CPU lifting tasks
-    cpu_executor = ProcessPoolExecutor(max_workers=config.max_workers)
+    cpu_executor = ProcessPoolExecutor(max_workers=config.max_concurrency)
 
     worker = BookSageWorker(
         parser=parser,
@@ -28,10 +28,10 @@ async def serve():
 
     booksage_pb2_grpc.add_DocumentParserServiceServicer_to_server(worker, server)
 
-    server.add_insecure_port(config.worker_listen_addr)
+    server.add_insecure_port(config.port)
 
     logging.info(
-        f"Starting BookSage worker gRPC server on {config.worker_listen_addr} "
+        f"Starting BookSage worker gRPC server on {config.port} "
         f"with {cpu_executor._max_workers} CPU procs"
     )
     await server.start()

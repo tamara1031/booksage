@@ -43,8 +43,8 @@ func (s *Server) Run() error {
 	ctx := context.Background()
 
 	// Connect to the Python ML Worker
-	log.Printf("Connecting to ML Worker at %s...", s.cfg.WorkerAddr)
-	conn, err := grpc.NewClient(s.cfg.WorkerAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	log.Printf("Connecting to ML Worker at %s...", s.cfg.Client.WorkerAddr)
+	conn, err := grpc.NewClient(s.cfg.Client.WorkerAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
@@ -56,24 +56,24 @@ func (s *Server) Run() error {
 	// ==========================================
 
 	var geminiClient repository.LLMClient
-	if !s.cfg.UseLocalOnlyLLM {
-		if s.cfg.GeminiAPIKey == "" {
-			log.Fatalf("[Error] BS_GEMINI_API_KEY is not set and BS_USE_LOCAL_ONLY_LLM is false. Cannot start Orchestrator.")
+	if !s.cfg.Model.LocalOnly {
+		if s.cfg.Model.GeminiKey == "" {
+			log.Fatalf("[Error] SAGE_MODEL_GEMINI_KEY is not set and SAGE_MODEL_LOCAL_ONLY is false. Cannot start Orchestrator.")
 		}
 		var err error
-		geminiClient, err = llm.NewGeminiClient(ctx, s.cfg.GeminiAPIKey)
+		geminiClient, err = llm.NewGeminiClient(ctx, s.cfg.Model.GeminiKey)
 		if err != nil {
 			return err
 		}
 	}
 
 	// Initialize Ollama Clients
-	localLLMClient := llm.NewLocalOllamaClient(s.cfg.OllamaHost, s.cfg.OllamaLLMModel)
-	localEmbedClient := llm.NewLocalOllamaClient(s.cfg.OllamaHost, s.cfg.OllamaEmbedModel)
+	localLLMClient := llm.NewLocalOllamaClient(s.cfg.Model.OllamaHost, s.cfg.Model.OllamaLLM)
+	localEmbedClient := llm.NewLocalOllamaClient(s.cfg.Model.OllamaHost, s.cfg.Model.OllamaEmbed)
 
 	// Override Gemini with Local Client if requested
-	if s.cfg.UseLocalOnlyLLM {
-		log.Println("[System] 🏠 SAGE_USE_LOCAL_ONLY_LLM is true. Overriding Gemini with Local Ollama.")
+	if s.cfg.Model.LocalOnly {
+		log.Println("[System] 🏠 SAGE_MODEL_LOCAL_ONLY is true. Overriding Gemini with Local Ollama.")
 		geminiClient = localLLMClient
 	}
 
@@ -83,12 +83,12 @@ func (s *Server) Run() error {
 		geminiClient.Name(), localLLMClient.Name(), localEmbedClient.Name())
 
 	// Pull configured Ollama models at startup
-	log.Printf("[System] 📥 Ensuring local models '%s' and '%s' are available...", s.cfg.OllamaLLMModel, s.cfg.OllamaEmbedModel)
-	if err := localLLMClient.PullModel(ctx, s.cfg.OllamaLLMModel); err != nil {
-		log.Printf("[Warning] 📥 Failed to pull LLM model '%s': %v", s.cfg.OllamaLLMModel, err)
+	log.Printf("[System] 📥 Ensuring local models '%s' and '%s' are available...", s.cfg.Model.OllamaLLM, s.cfg.Model.OllamaEmbed)
+	if err := localLLMClient.PullModel(ctx, s.cfg.Model.OllamaLLM); err != nil {
+		log.Printf("[Warning] 📥 Failed to pull LLM model '%s': %v", s.cfg.Model.OllamaLLM, err)
 	}
-	if err := localEmbedClient.PullModel(ctx, s.cfg.OllamaEmbedModel); err != nil {
-		log.Printf("[Warning] 📥 Failed to pull Embed model '%s': %v", s.cfg.OllamaEmbedModel, err)
+	if err := localEmbedClient.PullModel(ctx, s.cfg.Model.OllamaEmbed); err != nil {
+		log.Printf("[Warning] 📥 Failed to pull Embed model '%s': %v", s.cfg.Model.OllamaEmbed, err)
 	}
 
 	// Initialize gRPC clients
@@ -119,13 +119,13 @@ func (s *Server) Run() error {
 		return err
 	}
 
-	qdrantClient, err := qdrantpkg.NewClient(s.cfg.QdrantHost, s.cfg.QdrantPort, s.cfg.QdrantCollection)
+	qdrantClient, err := qdrantpkg.NewClient(s.cfg.DB.QdrantHost, s.cfg.DB.QdrantPort, s.cfg.DB.QdrantCollection)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = qdrantClient.Close() }()
 
-	neo4jClient, err := neo4jpkg.NewClient(ctx, s.cfg.Neo4jURI, s.cfg.Neo4jUser, s.cfg.Neo4jPassword)
+	neo4jClient, err := neo4jpkg.NewClient(ctx, s.cfg.DB.Neo4jURI, s.cfg.DB.Neo4jUser, s.cfg.DB.Neo4jPassword)
 	if err != nil {
 		return err
 	}

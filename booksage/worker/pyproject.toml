@@ -8,6 +8,7 @@ dependencies = [
     "grpcio>=1.78.1",
     "grpcio-tools>=1.78.1",
     "pydantic>=2.6.0",
+    "pydantic-settings>=2.1.0",
     "python-dotenv>=1.0.1",
     
     # Fast API (carried over for some REST adapters if any, though gRPC is primary now)
