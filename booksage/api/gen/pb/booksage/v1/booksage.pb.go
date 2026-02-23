@@ -301,388 +301,6 @@ func (x *RawDocument) GetMetadata() map[string]string {
 	return nil
 }
 
-// EmbeddingRequest accepts an array of strings to maximize GPU parallelization
-// NOTE: Due to the 4MB default gRPC message size limit, clients MUST batch
-// requests (e.g., maximum 100 chunks per request) before calling this RPC.
-type EmbeddingRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Texts []string               `protobuf:"bytes,1,rep,name=texts,proto3" json:"texts,omitempty"`
-	// Specify the model or embedding type, e.g., "colbert", "dense"
-	EmbeddingType string `protobuf:"bytes,2,opt,name=embedding_type,json=embeddingType,proto3" json:"embedding_type,omitempty"`
-	// Strategy for task (e.g., "query", "document")
-	TaskType      string `protobuf:"bytes,3,opt,name=task_type,json=taskType,proto3" json:"task_type,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EmbeddingRequest) Reset() {
-	*x = EmbeddingRequest{}
-	mi := &file_booksage_v1_booksage_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EmbeddingRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EmbeddingRequest) ProtoMessage() {}
-
-func (x *EmbeddingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_booksage_v1_booksage_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EmbeddingRequest.ProtoReflect.Descriptor instead.
-func (*EmbeddingRequest) Descriptor() ([]byte, []int) {
-	return file_booksage_v1_booksage_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *EmbeddingRequest) GetTexts() []string {
-	if x != nil {
-		return x.Texts
-	}
-	return nil
-}
-
-func (x *EmbeddingRequest) GetEmbeddingType() string {
-	if x != nil {
-		return x.EmbeddingType
-	}
-	return ""
-}
-
-func (x *EmbeddingRequest) GetTaskType() string {
-	if x != nil {
-		return x.TaskType
-	}
-	return ""
-}
-
-// EmbeddingResponse containing the corresponding vectors
-type EmbeddingResponse struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Results []*EmbeddingResult     `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
-	// Total tokens processed, useful for usage tracking
-	TotalTokens   int32 `protobuf:"varint,2,opt,name=total_tokens,json=totalTokens,proto3" json:"total_tokens,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EmbeddingResponse) Reset() {
-	*x = EmbeddingResponse{}
-	mi := &file_booksage_v1_booksage_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EmbeddingResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EmbeddingResponse) ProtoMessage() {}
-
-func (x *EmbeddingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_booksage_v1_booksage_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EmbeddingResponse.ProtoReflect.Descriptor instead.
-func (*EmbeddingResponse) Descriptor() ([]byte, []int) {
-	return file_booksage_v1_booksage_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *EmbeddingResponse) GetResults() []*EmbeddingResult {
-	if x != nil {
-		return x.Results
-	}
-	return nil
-}
-
-func (x *EmbeddingResponse) GetTotalTokens() int32 {
-	if x != nil {
-		return x.TotalTokens
-	}
-	return 0
-}
-
-// EmbeddingResult encompasses various embedding formats
-type EmbeddingResult struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Original text corresponding to this embedding
-	Text string `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
-	// Use oneof to allow return of different vector formulations depending on the request
-	//
-	// Types that are valid to be assigned to Vector:
-	//
-	//	*EmbeddingResult_Dense
-	//	*EmbeddingResult_Sparse
-	//	*EmbeddingResult_Tensor
-	Vector        isEmbeddingResult_Vector `protobuf_oneof:"vector"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *EmbeddingResult) Reset() {
-	*x = EmbeddingResult{}
-	mi := &file_booksage_v1_booksage_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *EmbeddingResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*EmbeddingResult) ProtoMessage() {}
-
-func (x *EmbeddingResult) ProtoReflect() protoreflect.Message {
-	mi := &file_booksage_v1_booksage_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use EmbeddingResult.ProtoReflect.Descriptor instead.
-func (*EmbeddingResult) Descriptor() ([]byte, []int) {
-	return file_booksage_v1_booksage_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *EmbeddingResult) GetText() string {
-	if x != nil {
-		return x.Text
-	}
-	return ""
-}
-
-func (x *EmbeddingResult) GetVector() isEmbeddingResult_Vector {
-	if x != nil {
-		return x.Vector
-	}
-	return nil
-}
-
-func (x *EmbeddingResult) GetDense() *DenseVector {
-	if x != nil {
-		if x, ok := x.Vector.(*EmbeddingResult_Dense); ok {
-			return x.Dense
-		}
-	}
-	return nil
-}
-
-func (x *EmbeddingResult) GetSparse() *SparseVector {
-	if x != nil {
-		if x, ok := x.Vector.(*EmbeddingResult_Sparse); ok {
-			return x.Sparse
-		}
-	}
-	return nil
-}
-
-func (x *EmbeddingResult) GetTensor() *TensorVector {
-	if x != nil {
-		if x, ok := x.Vector.(*EmbeddingResult_Tensor); ok {
-			return x.Tensor
-		}
-	}
-	return nil
-}
-
-type isEmbeddingResult_Vector interface {
-	isEmbeddingResult_Vector()
-}
-
-type EmbeddingResult_Dense struct {
-	Dense *DenseVector `protobuf:"bytes,2,opt,name=dense,proto3,oneof"`
-}
-
-type EmbeddingResult_Sparse struct {
-	Sparse *SparseVector `protobuf:"bytes,3,opt,name=sparse,proto3,oneof"`
-}
-
-type EmbeddingResult_Tensor struct {
-	Tensor *TensorVector `protobuf:"bytes,4,opt,name=tensor,proto3,oneof"` // e.g., for ColBERT token embeddings
-}
-
-func (*EmbeddingResult_Dense) isEmbeddingResult_Vector() {}
-
-func (*EmbeddingResult_Sparse) isEmbeddingResult_Vector() {}
-
-func (*EmbeddingResult_Tensor) isEmbeddingResult_Vector() {}
-
-// DenseVector represents dense embeddings (e.g., 768 or 1536 dim floats)
-type DenseVector struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Values        []float32              `protobuf:"fixed32,1,rep,packed,name=values,proto3" json:"values,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DenseVector) Reset() {
-	*x = DenseVector{}
-	mi := &file_booksage_v1_booksage_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DenseVector) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DenseVector) ProtoMessage() {}
-
-func (x *DenseVector) ProtoReflect() protoreflect.Message {
-	mi := &file_booksage_v1_booksage_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DenseVector.ProtoReflect.Descriptor instead.
-func (*DenseVector) Descriptor() ([]byte, []int) {
-	return file_booksage_v1_booksage_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *DenseVector) GetValues() []float32 {
-	if x != nil {
-		return x.Values
-	}
-	return nil
-}
-
-// SparseVector represents sparse embeddings (e.g., SPLADE)
-type SparseVector struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Indices       []int32                `protobuf:"varint,1,rep,packed,name=indices,proto3" json:"indices,omitempty"`
-	Values        []float32              `protobuf:"fixed32,2,rep,packed,name=values,proto3" json:"values,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SparseVector) Reset() {
-	*x = SparseVector{}
-	mi := &file_booksage_v1_booksage_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SparseVector) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SparseVector) ProtoMessage() {}
-
-func (x *SparseVector) ProtoReflect() protoreflect.Message {
-	mi := &file_booksage_v1_booksage_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SparseVector.ProtoReflect.Descriptor instead.
-func (*SparseVector) Descriptor() ([]byte, []int) {
-	return file_booksage_v1_booksage_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *SparseVector) GetIndices() []int32 {
-	if x != nil {
-		return x.Indices
-	}
-	return nil
-}
-
-func (x *SparseVector) GetValues() []float32 {
-	if x != nil {
-		return x.Values
-	}
-	return nil
-}
-
-// TensorVector accommodates multi-dimensional embedding results like ColBERT
-type TensorVector struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Flattened elements of a multi-dimensional array [seq_len, dim]
-	Values []float32 `protobuf:"fixed32,1,rep,packed,name=values,proto3" json:"values,omitempty"`
-	// Shape of the tensor to allow reconstruction
-	Shape         []int32 `protobuf:"varint,2,rep,packed,name=shape,proto3" json:"shape,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TensorVector) Reset() {
-	*x = TensorVector{}
-	mi := &file_booksage_v1_booksage_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TensorVector) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TensorVector) ProtoMessage() {}
-
-func (x *TensorVector) ProtoReflect() protoreflect.Message {
-	mi := &file_booksage_v1_booksage_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TensorVector.ProtoReflect.Descriptor instead.
-func (*TensorVector) Descriptor() ([]byte, []int) {
-	return file_booksage_v1_booksage_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *TensorVector) GetValues() []float32 {
-	if x != nil {
-		return x.Values
-	}
-	return nil
-}
-
-func (x *TensorVector) GetShape() []int32 {
-	if x != nil {
-		return x.Shape
-	}
-	return nil
-}
-
 var File_booksage_v1_booksage_proto protoreflect.FileDescriptor
 
 const file_booksage_v1_booksage_proto_rawDesc = "" +
@@ -714,32 +332,9 @@ const file_booksage_v1_booksage_proto_rawDesc = "" +
 	"\bmetadata\x18\x04 \x03(\v2&.booksage.v1.RawDocument.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"l\n" +
-	"\x10EmbeddingRequest\x12\x14\n" +
-	"\x05texts\x18\x01 \x03(\tR\x05texts\x12%\n" +
-	"\x0eembedding_type\x18\x02 \x01(\tR\rembeddingType\x12\x1b\n" +
-	"\ttask_type\x18\x03 \x01(\tR\btaskType\"n\n" +
-	"\x11EmbeddingResponse\x126\n" +
-	"\aresults\x18\x01 \x03(\v2\x1c.booksage.v1.EmbeddingResultR\aresults\x12!\n" +
-	"\ftotal_tokens\x18\x02 \x01(\x05R\vtotalTokens\"\xcb\x01\n" +
-	"\x0fEmbeddingResult\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\x120\n" +
-	"\x05dense\x18\x02 \x01(\v2\x18.booksage.v1.DenseVectorH\x00R\x05dense\x123\n" +
-	"\x06sparse\x18\x03 \x01(\v2\x19.booksage.v1.SparseVectorH\x00R\x06sparse\x123\n" +
-	"\x06tensor\x18\x04 \x01(\v2\x19.booksage.v1.TensorVectorH\x00R\x06tensorB\b\n" +
-	"\x06vector\"%\n" +
-	"\vDenseVector\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\x02R\x06values\"@\n" +
-	"\fSparseVector\x12\x18\n" +
-	"\aindices\x18\x01 \x03(\x05R\aindices\x12\x16\n" +
-	"\x06values\x18\x02 \x03(\x02R\x06values\"<\n" +
-	"\fTensorVector\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\x02R\x06values\x12\x14\n" +
-	"\x05shape\x18\x02 \x03(\x05R\x05shape2[\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012[\n" +
 	"\x15DocumentParserService\x12B\n" +
-	"\x05Parse\x12\x19.booksage.v1.ParseRequest\x1a\x1a.booksage.v1.ParseResponse(\x010\x012g\n" +
-	"\x10EmbeddingService\x12S\n" +
-	"\x12GenerateEmbeddings\x12\x1d.booksage.v1.EmbeddingRequest\x1a\x1e.booksage.v1.EmbeddingResponseBEZCgithub.com/booksage/booksage-api/internal/pb/booksage/v1;booksagev1b\x06proto3"
+	"\x05Parse\x12\x19.booksage.v1.ParseRequest\x1a\x1a.booksage.v1.ParseResponse(\x010\x01BEZCgithub.com/booksage/booksage-api/internal/pb/booksage/v1;booksagev1b\x06proto3"
 
 var (
 	file_booksage_v1_booksage_proto_rawDescOnce sync.Once
@@ -753,39 +348,27 @@ func file_booksage_v1_booksage_proto_rawDescGZIP() []byte {
 	return file_booksage_v1_booksage_proto_rawDescData
 }
 
-var file_booksage_v1_booksage_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_booksage_v1_booksage_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_booksage_v1_booksage_proto_goTypes = []any{
-	(*ParseRequest)(nil),      // 0: booksage.v1.ParseRequest
-	(*DocumentMetadata)(nil),  // 1: booksage.v1.DocumentMetadata
-	(*ParseResponse)(nil),     // 2: booksage.v1.ParseResponse
-	(*RawDocument)(nil),       // 3: booksage.v1.RawDocument
-	(*EmbeddingRequest)(nil),  // 4: booksage.v1.EmbeddingRequest
-	(*EmbeddingResponse)(nil), // 5: booksage.v1.EmbeddingResponse
-	(*EmbeddingResult)(nil),   // 6: booksage.v1.EmbeddingResult
-	(*DenseVector)(nil),       // 7: booksage.v1.DenseVector
-	(*SparseVector)(nil),      // 8: booksage.v1.SparseVector
-	(*TensorVector)(nil),      // 9: booksage.v1.TensorVector
-	nil,                       // 10: booksage.v1.ParseResponse.ExtractedMetadataEntry
-	nil,                       // 11: booksage.v1.RawDocument.MetadataEntry
+	(*ParseRequest)(nil),     // 0: booksage.v1.ParseRequest
+	(*DocumentMetadata)(nil), // 1: booksage.v1.DocumentMetadata
+	(*ParseResponse)(nil),    // 2: booksage.v1.ParseResponse
+	(*RawDocument)(nil),      // 3: booksage.v1.RawDocument
+	nil,                      // 4: booksage.v1.ParseResponse.ExtractedMetadataEntry
+	nil,                      // 5: booksage.v1.RawDocument.MetadataEntry
 }
 var file_booksage_v1_booksage_proto_depIdxs = []int32{
-	1,  // 0: booksage.v1.ParseRequest.metadata:type_name -> booksage.v1.DocumentMetadata
-	10, // 1: booksage.v1.ParseResponse.extracted_metadata:type_name -> booksage.v1.ParseResponse.ExtractedMetadataEntry
-	3,  // 2: booksage.v1.ParseResponse.documents:type_name -> booksage.v1.RawDocument
-	11, // 3: booksage.v1.RawDocument.metadata:type_name -> booksage.v1.RawDocument.MetadataEntry
-	6,  // 4: booksage.v1.EmbeddingResponse.results:type_name -> booksage.v1.EmbeddingResult
-	7,  // 5: booksage.v1.EmbeddingResult.dense:type_name -> booksage.v1.DenseVector
-	8,  // 6: booksage.v1.EmbeddingResult.sparse:type_name -> booksage.v1.SparseVector
-	9,  // 7: booksage.v1.EmbeddingResult.tensor:type_name -> booksage.v1.TensorVector
-	0,  // 8: booksage.v1.DocumentParserService.Parse:input_type -> booksage.v1.ParseRequest
-	4,  // 9: booksage.v1.EmbeddingService.GenerateEmbeddings:input_type -> booksage.v1.EmbeddingRequest
-	2,  // 10: booksage.v1.DocumentParserService.Parse:output_type -> booksage.v1.ParseResponse
-	5,  // 11: booksage.v1.EmbeddingService.GenerateEmbeddings:output_type -> booksage.v1.EmbeddingResponse
-	10, // [10:12] is the sub-list for method output_type
-	8,  // [8:10] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	1, // 0: booksage.v1.ParseRequest.metadata:type_name -> booksage.v1.DocumentMetadata
+	4, // 1: booksage.v1.ParseResponse.extracted_metadata:type_name -> booksage.v1.ParseResponse.ExtractedMetadataEntry
+	3, // 2: booksage.v1.ParseResponse.documents:type_name -> booksage.v1.RawDocument
+	5, // 3: booksage.v1.RawDocument.metadata:type_name -> booksage.v1.RawDocument.MetadataEntry
+	0, // 4: booksage.v1.DocumentParserService.Parse:input_type -> booksage.v1.ParseRequest
+	2, // 5: booksage.v1.DocumentParserService.Parse:output_type -> booksage.v1.ParseResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_booksage_v1_booksage_proto_init() }
@@ -797,20 +380,15 @@ func file_booksage_v1_booksage_proto_init() {
 		(*ParseRequest_Metadata)(nil),
 		(*ParseRequest_ChunkData)(nil),
 	}
-	file_booksage_v1_booksage_proto_msgTypes[6].OneofWrappers = []any{
-		(*EmbeddingResult_Dense)(nil),
-		(*EmbeddingResult_Sparse)(nil),
-		(*EmbeddingResult_Tensor)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_booksage_v1_booksage_proto_rawDesc), len(file_booksage_v1_booksage_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   6,
 			NumExtensions: 0,
-			NumServices:   2,
+			NumServices:   1,
 		},
 		GoTypes:           file_booksage_v1_booksage_proto_goTypes,
 		DependencyIndexes: file_booksage_v1_booksage_proto_depIdxs,
