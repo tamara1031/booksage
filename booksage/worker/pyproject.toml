@@ -11,19 +11,11 @@ dependencies = [
     "pydantic-settings>=2.1.0",
     "python-dotenv>=1.0.1",
     
-    # Fast API (carried over for some REST adapters if any, though gRPC is primary now)
-    "fastapi>=0.110.0",
-    "uvicorn>=0.27.0",
-
     # ETL & Parser Layer
     "pymupdf>=1.23.22",
     "ebooklib>=0.18",
     "beautifulsoup4>=4.12.3",
     "docling>=2.74.0",
-    
-    # Retrieval Layer (Graph DB & Vector DB) - Optional for worker now, but keeping qdrant/neo4j if needed for ETL
-    "qdrant-client>=1.7.3",
-    "neo4j>=5.17.0",
 ]
 
 # Dev dependencies moved to dependency-groups
