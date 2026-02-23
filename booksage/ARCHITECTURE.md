@@ -23,7 +23,6 @@ The system is architected as a clean decoupling between cognitive orchestration 
 **Role:** The "Structural ETL Engine."
 - **Layout-Aware Parsing**: Specializes in high-precision layout analysis using **Docling**. It decomposes complex binaries (PDF/EPUB) into structural elements (headings, tables, lists) while preserving logical hierarchies.
 - **Intelligent Chunking**: Maps the physical document layout to logical data units, passing hierarchical metadata to Go for **RAPTOR** recursive summarization and tree construction.
-- **Offloaded Tensor Operations**: Optionally handles heavy tensor-interaction tasks (e.g., **ColBERTv2** late interaction) to maintain Orchestrator responsiveness.
 
 ---
 
@@ -31,7 +30,7 @@ The system is architected as a clean decoupling between cognitive orchestration 
 
 ### A. Strict Separation of Concerns
 We enforce the principle that the ML Worker is for **Data Extraction**, while the Go Orchestrator is for **Intelligence**. 
-- Heavy model inference is centralized in Go.
+- Heavy model inference is centralized in Go (including all LLM and Embedding operations).
 - Python is strictly offloaded to CPU/GPU-intensive layout analysis and chunking.
 
 ### B. Synergy of BookRAG & LightRAG
@@ -60,7 +59,18 @@ The generation phase is wrapped in an autonomous verification loop:
 
 ---
 
-## 4. Code Organization (Hexagonal Architecture)
+## 4. Configuration
+
+Key environment variables that drive the hybrid architecture:
+
+- **`SAGE_MODEL_LOCAL_ONLY`** (default: `true`): Forces the system to use local models (Ollama/Infinity) exclusively. Set to `false` to enable cloud routing (e.g. Gemini).
+- **`SAGE_CLIENT_WORKER_ADDR`**: Address of the Python gRPC worker (e.g., `worker:50051`).
+- **`SAGE_DB_QDRANT_HOST`**: Hostname for the Vector DB.
+- **`SAGE_DB_NEO4J_URI`**: URI for the Graph DB.
+
+---
+
+## 5. Code Organization (Hexagonal Architecture)
 
 The Go API Orchestrator follows a **Hexagonal Architecture (Ports and Adapters)** to isolate business logic from infrastructure.
 
@@ -71,7 +81,7 @@ The Go API Orchestrator follows a **Hexagonal Architecture (Ports and Adapters)*
 
 ---
 
-## 5. Class Design
+## 6. Class Design
 
 The following diagram illustrates the core components of the BookSage Ingestion Pipeline and Query Engine.
 
@@ -192,7 +202,7 @@ classDiagram
 
 ---
 
-## 6. Sequence Diagrams
+## 7. Sequence Diagrams
 
 ### 6.1 Ingestion Flow
 This flow details the interaction between the Go API Orchestrator (Saga) and the Python Parser Worker, highlighting the refactored strict separation of concerns where business logic (resolution/building) is delegated.
