@@ -60,59 +60,96 @@ The generation phase is wrapped in an autonomous verification loop:
 
 ---
 
-## 4. Class Design
+## 4. Code Organization (Hexagonal Architecture)
+
+The Go API Orchestrator follows a **Hexagonal Architecture (Ports and Adapters)** to isolate business logic from infrastructure.
+
+*   **`internal/domain/`**: The Core. Defines entities (`Document`, `Saga`) and repository interfaces (`DocumentRepository`, `LLMClient`). Pure Go.
+*   **`internal/usecase/`**: Application Logic. Orchestrates domain objects to fulfill use cases, organized by feature (e.g., `ingest/`, `query/`).
+*   **`internal/port/`**: Primary Adapters (Driving). Entry points into the application, such as HTTP handlers.
+*   **`internal/infrastructure/`**: Secondary Adapters (Driven). Concrete implementations of domain interfaces (e.g., `db/` (Postgres/SQLite), `llm/` (Ollama/Gemini), `vector/`).
+
+---
+
+## 5. Class Design
 
 The following diagram illustrates the core components of the BookSage Ingestion Pipeline and Query Engine.
 
 ```mermaid
 classDiagram
     namespace Go_API_Orchestrator {
-        class Server {
-            +handleIngest(w, r)
-            +handleQuery(w, r)
+        namespace Domain {
+            class Document {
+                +ID int64
+                +Title string
+                +FileHash []byte
+            }
+            class IngestSaga {
+                +ID int64
+                +Status SagaStatus
+            }
+            class DocumentRepository {
+                <<interface>>
+                +CreateDocument(ctx, doc)
+                +GetDocumentByHash(ctx, hash)
+            }
+            class SagaRepository {
+                <<interface>>
+                +CreateSaga(ctx, saga)
+                +UpdateSagaStatus(ctx, id, status)
+            }
+            class VectorRepository {
+                <<interface>>
+                +InsertChunks(ctx, chunks)
+                +Search(ctx, vector)
+            }
+            class GraphRepository {
+                <<interface>>
+                +InsertNodesAndEdges(ctx, nodes)
+            }
+            class LLMRouter {
+                <<interface>>
+                +RouteLLMTask(taskType)
+            }
         }
 
-        class SagaOrchestrator {
-            +StartOrResumeIngestion(ctx, doc)
-            +RunIngestionSaga(ctx, saga, chunks)
+        namespace Port_Primary {
+            class Server {
+                +handleIngest(w, r)
+                +handleQuery(w, r)
+            }
         }
 
-        class EntityResolver {
-            +ResolveEntity(ctx, ent)
+        namespace Usecase {
+            class SagaOrchestrator {
+                +StartOrResumeIngestion(ctx, doc)
+                +RunIngestionSaga(ctx, saga, chunks)
+            }
+            class EntityResolver {
+                +ResolveEntity(ctx, ent)
+            }
+            class GraphBuilder {
+                +BuildGraphElements(docID, entities, relations, treeNodes)
+            }
+            class Generator {
+                +GenerateAnswer(ctx, query, stream)
+                -decomposeQuery(ctx, query)
+            }
+            class FusionRetriever {
+                +Retrieve(ctx, query)
+            }
+            class SelfRAGCritique {
+                +EvaluateRetrieval(ctx, query, doc)
+                +EvaluateGeneration(ctx, answer, context)
+            }
         }
 
-        class GraphBuilder {
-            +BuildGraphElements(docID, entities, relations, treeNodes)
-        }
-
-        class Generator {
-            +GenerateAnswer(ctx, query, stream)
-            -decomposeQuery(ctx, query)
-        }
-
-        class FusionRetriever {
-            +Retrieve(ctx, query)
-        }
-
-        class SelfRAGCritique {
-            +EvaluateRetrieval(ctx, query, doc)
-            +EvaluateGeneration(ctx, answer, context)
-        }
-
-        class LLMRouter {
-            <<interface>>
-            +RouteLLMTask(taskType)
-        }
-
-        class VectorRepository {
-            <<interface>>
-            +InsertChunks(ctx, chunks)
-            +Search(ctx, vector)
-        }
-
-        class GraphRepository {
-            <<interface>>
-            +InsertNodesAndEdges(ctx, nodes)
+        namespace Infrastructure {
+            class BunStore {
+                -db *bun.DB
+                +CreateDocument(ctx, doc)
+                -toDocumentModel(doc)
+            }
         }
     }
 
@@ -133,6 +170,8 @@ classDiagram
     SagaOrchestrator --> GraphRepository
     SagaOrchestrator --> EntityResolver
     SagaOrchestrator --> GraphBuilder
+    SagaOrchestrator --> DocumentRepository
+    SagaOrchestrator --> SagaRepository
 
     Generator --> FusionRetriever
     Generator --> SelfRAGCritique
@@ -141,6 +180,11 @@ classDiagram
     FusionRetriever --> VectorRepository
     FusionRetriever --> GraphRepository
 
+    BunStore ..|> DocumentRepository
+    BunStore ..|> SagaRepository
+    BunStore ..> Document : Creates/Reads
+    BunStore ..> IngestSaga : Creates/Reads
+
     DocumentParser o-- IDocumentParser
     DoclingParser ..|> IDocumentParser
     EpubParser ..|> IDocumentParser
@@ -148,9 +192,9 @@ classDiagram
 
 ---
 
-## 5. Sequence Diagrams
+## 6. Sequence Diagrams
 
-### 5.1 Ingestion Flow
+### 6.1 Ingestion Flow
 This flow details the interaction between the Go API Orchestrator (Saga) and the Python Parser Worker, highlighting the refactored strict separation of concerns where business logic (resolution/building) is delegated.
 
 ```mermaid
@@ -228,7 +272,7 @@ sequenceDiagram
     deactivate Server
 ```
 
-### 5.2 RAG Generation Flow
+### 6.2 RAG Generation Flow
 This flow visualizes the enhanced Adaptive RAG pipeline, incorporating Query Routing, Reflexion loops for missing context, and strict loop termination guards.
 
 1.  **Adaptive RAG (Query Routing)**:
