@@ -6,9 +6,9 @@ from collections.abc import AsyncIterable
 from concurrent.futures import ProcessPoolExecutor
 
 import grpc
+from pb.booksage.v1 import booksage_pb2, booksage_pb2_grpc
 
 from booksage.parser import DocumentParser
-from pb.booksage.v1 import booksage_pb2, booksage_pb2_grpc
 
 
 class BookSageWorker(booksage_pb2_grpc.DocumentParserServiceServicer):
