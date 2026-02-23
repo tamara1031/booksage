@@ -78,52 +78,78 @@ The following diagram illustrates the core components of the BookSage Ingestion 
 ```mermaid
 classDiagram
     namespace Go_API_Orchestrator {
-        class Server {
-            +handleIngest(w, r)
-            +handleQuery(w, r)
+        namespace Domain {
+            class Document {
+                +ID int64
+                +Title string
+                +FileHash []byte
+            }
+            class IngestSaga {
+                +ID int64
+                +Status SagaStatus
+            }
+            class DocumentRepository {
+                <<interface>>
+                +CreateDocument(ctx, doc)
+                +GetDocumentByHash(ctx, hash)
+            }
+            class SagaRepository {
+                <<interface>>
+                +CreateSaga(ctx, saga)
+                +UpdateSagaStatus(ctx, id, status)
+            }
+            class VectorRepository {
+                <<interface>>
+                +InsertChunks(ctx, chunks)
+                +Search(ctx, vector)
+            }
+            class GraphRepository {
+                <<interface>>
+                +InsertNodesAndEdges(ctx, nodes)
+            }
+            class LLMRouter {
+                <<interface>>
+                +RouteLLMTask(taskType)
+            }
         }
 
-        class SagaOrchestrator {
-            +StartOrResumeIngestion(ctx, doc)
-            +RunIngestionSaga(ctx, saga, chunks)
+        namespace Port_Primary {
+            class Server {
+                +handleIngest(w, r)
+                +handleQuery(w, r)
+            }
         }
 
-        class EntityResolver {
-            +ResolveEntity(ctx, ent)
+        namespace Usecase {
+            class SagaOrchestrator {
+                +StartOrResumeIngestion(ctx, doc)
+                +RunIngestionSaga(ctx, saga, chunks)
+            }
+            class EntityResolver {
+                +ResolveEntity(ctx, ent)
+            }
+            class GraphBuilder {
+                +BuildGraphElements(docID, entities, relations, treeNodes)
+            }
+            class Generator {
+                +GenerateAnswer(ctx, query, stream)
+                -decomposeQuery(ctx, query)
+            }
+            class FusionRetriever {
+                +Retrieve(ctx, query)
+            }
+            class SelfRAGCritique {
+                +EvaluateRetrieval(ctx, query, doc)
+                +EvaluateGeneration(ctx, answer, context)
+            }
         }
 
-        class GraphBuilder {
-            +BuildGraphElements(docID, entities, relations, treeNodes)
-        }
-
-        class Generator {
-            +GenerateAnswer(ctx, query, stream)
-            -decomposeQuery(ctx, query)
-        }
-
-        class FusionRetriever {
-            +Retrieve(ctx, query)
-        }
-
-        class SelfRAGCritique {
-            +EvaluateRetrieval(ctx, query, doc)
-            +EvaluateGeneration(ctx, answer, context)
-        }
-
-        class LLMRouter {
-            <<interface>>
-            +RouteLLMTask(taskType)
-        }
-
-        class VectorRepository {
-            <<interface>>
-            +InsertChunks(ctx, chunks)
-            +Search(ctx, vector)
-        }
-
-        class GraphRepository {
-            <<interface>>
-            +InsertNodesAndEdges(ctx, nodes)
+        namespace Infrastructure {
+            class BunStore {
+                -db *bun.DB
+                +CreateDocument(ctx, doc)
+                -toDocumentModel(doc)
+            }
         }
     }
 
@@ -144,6 +170,8 @@ classDiagram
     SagaOrchestrator --> GraphRepository
     SagaOrchestrator --> EntityResolver
     SagaOrchestrator --> GraphBuilder
+    SagaOrchestrator --> DocumentRepository
+    SagaOrchestrator --> SagaRepository
 
     Generator --> FusionRetriever
     Generator --> SelfRAGCritique
@@ -151,6 +179,11 @@ classDiagram
 
     FusionRetriever --> VectorRepository
     FusionRetriever --> GraphRepository
+
+    BunStore ..|> DocumentRepository
+    BunStore ..|> SagaRepository
+    BunStore ..> Document : Creates/Reads
+    BunStore ..> IngestSaga : Creates/Reads
 
     DocumentParser o-- IDocumentParser
     DoclingParser ..|> IDocumentParser
