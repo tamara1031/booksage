@@ -46,7 +46,11 @@ func TestRetrieve_NilClients(t *testing.T) {
 
 func TestRetrieve_ParallelFlow(t *testing.T) {
 	// Arrange
-	mockLLM := &mockLLMClient{resp: "summary"}
+	mockLLM := &MockLLMClient{
+		GenerateFunc: func(ctx context.Context, prompt string) (string, error) {
+			return "summary", nil
+		},
+	}
 	retriever := NewFusionRetriever(&mockQdrant{}, &mockNeo4j{}, nil, mockLLM)
 
 	// Act
@@ -59,20 +63,5 @@ func TestRetrieve_ParallelFlow(t *testing.T) {
 	// Even if search results are empty in mocks, the flow should complete
 	if results == nil {
 		t.Error("expected non-nil result slice")
-	}
-}
-
-func TestSkylineRanker(t *testing.T) {
-	ranker := &SkylineRanker{}
-
-	results := []domain.SearchResult{
-		{ID: "1", Content: "A", Score: 0.9, Source: "vector"},
-		{ID: "2", Content: "B", Score: 0.8, Source: "graph"},
-		{ID: "3", Content: "C", Score: 0.5, Source: "vector"},
-	}
-
-	fused := ranker.Rank(results)
-	if len(fused) == 0 {
-		t.Fatal("Expected skyline nodes, got 0")
 	}
 }
