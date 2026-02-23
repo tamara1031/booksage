@@ -3,7 +3,7 @@ TAG ?= latest
 
 # --- Protocol Buffers ---
 PROTO_DIR = proto/booksage/v1
-GO_PROTO_OUT = api/internal/pb
+GO_PROTO_OUT = api/gen/pb
 PYTHON_PROTO_OUT = worker/src/booksage/pb
 
 # --- API (Go) ---

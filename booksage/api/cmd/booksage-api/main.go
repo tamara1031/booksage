@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"github.com/booksage/booksage-api/internal/conf"
-	"github.com/booksage/booksage-api/internal/platform/server"
+	"github.com/booksage/booksage-api/internal/infrastructure/server"
 )
 
 func main() {
