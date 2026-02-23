@@ -126,7 +126,9 @@ func TestServer_Ingest_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _ = io.WriteString(part, "dummy content")
-	writer.Close()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	req := httptest.NewRequest("POST", "/api/v1/ingest", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())

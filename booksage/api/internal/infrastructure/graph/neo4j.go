@@ -12,12 +12,12 @@ import (
 // Client implements the ingest_usecase.Neo4jClient interface using the official Neo4j Go driver.
 // Neo4jClient implements the graph repository interface.
 type Neo4jClient struct {
-	driver neo4j.DriverWithContext
+	driver neo4j.Driver
 }
 
 // NewNeo4jClient creates a new Neo4j client and verifies connectivity.
 func NewNeo4jClient(ctx context.Context, uri, user, password string) (*Neo4jClient, error) {
-	driver, err := neo4j.NewDriverWithContext(uri, neo4j.BasicAuth(user, password, ""))
+	driver, err := neo4j.NewDriver(uri, neo4j.BasicAuth(user, password, ""))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Neo4j driver for %s: %w", uri, err)
 	}
