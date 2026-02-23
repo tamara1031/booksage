@@ -25,7 +25,7 @@ func (r *SkylineRanker) Rank(results []SearchResult) []SearchResult {
 
 	enriched := make([]enrichedResult, len(results))
 	for i, res := range results {
-		vScore := res.Score  // Reranked score (high fidelity)
+		vScore := res.Score    // Reranked score (high fidelity)
 		gScore := float32(0.5) // Default graph relevance
 
 		// Heuristic: If source is graph, boost graph score
