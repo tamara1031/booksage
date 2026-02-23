@@ -21,7 +21,17 @@ type LLMClient interface {
 	Name() string
 }
 
+// TensorEngine defines the interface for tensor operations (Embeddings & Reranking).
+type TensorEngine interface {
+	// Embed generates dense vector embeddings for a list of texts.
+	Embed(ctx context.Context, texts []string) ([][]float32, error)
+	// Rerank re-scores a list of documents against a query using a Cross-Encoder or ColBERT.
+	// It returns a list of scores corresponding to the input documents.
+	Rerank(ctx context.Context, query string, documents []string) ([]float32, error)
+}
+
 // EmbeddingClient defines the interface for generating embeddings.
+// Deprecated: Use TensorEngine instead.
 type EmbeddingClient interface {
 	Embed(ctx context.Context, texts []string) ([][]float32, error)
 	Name() string

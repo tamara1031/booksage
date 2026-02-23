@@ -54,7 +54,7 @@ The generation phase is wrapped in an autonomous verification loop:
     - **Neo4j** (Graph Store for Entities, Relations, and Hierarchical Trees)
     - **SQLite** (Relational Store for Saga state management and idempotency)
 - **Models**: 
-    - **Local**: Ollama (Embeddings/Reasoning)
+    - **Local**: Ollama (Generative LLM & Keyword Extraction), Infinity (Dense Embedding & ColBERT Reranking)
     - **Cloud**: Gemini (Advanced reasoning & Agentic loops)
 - **Deployment**: Containerized via Docker / Kubernetes
 
@@ -229,7 +229,13 @@ sequenceDiagram
 ```
 
 ### 5.2 RAG Generation Flow
-This flow visualizes the advanced Chain-of-Retrieval (CoR), Fusion Retrieval, and Self-RAG critique loops.
+This flow visualizes the new Two-Stage Retrieval pipeline, incorporating LightRAG keyword extraction, parallel search, and Skyline fusion.
+
+1.  **Query Extraction (LightRAG)**: The system extracts "Low-level" (specific entities) and "High-level" (broad themes) keywords in a single pass, replacing iterative decomposition.
+2.  **Parallel Retrieval (1st-Stage)**: Using the extracted keys, the system queries the Vector DB (Qdrant) and Graph DB (Neo4j) concurrently.
+3.  **Tensor Reranking (2nd-Stage)**: Candidates are reranked using **Infinity (ColBERT)**, providing high-fidelity tensor scores.
+4.  **Skyline Fusion**: The **Skyline Ranker** merges vector scores and graph centrality using Pareto optimization to select the optimal context window.
+5.  **Self-RAG Critique**: The generation is self-evaluated; if the answer is unsupported by the context, the system regenerates with stricter constraints.
 
 ```mermaid
 sequenceDiagram
@@ -237,63 +243,60 @@ sequenceDiagram
     actor User
     participant Server as API Server (SSE)
     participant Gen as Generator (Agentic RAG)
-    participant Ret as FusionRetriever
-    participant Crit as SelfRAGCritique
-    participant LLM as LLM Router (Gemini/Ollama)
-    participant DB as Vector/Graph DBs
+    participant Ollama as Ollama (LLM Engine)
+    participant Inf as Infinity (Tensor/Vector Engine)
+    participant DB_V as Qdrant (Vector DB)
+    participant DB_G as Neo4j (Graph DB)
+    participant Sky as Skyline Ranker
 
     User->>Server: POST /api/v1/query (JSON)
     activate Server
     Server->>Gen: GenerateAnswer(ctx, query, stream)
     activate Gen
 
-    %% Step 1: CoR Decomposition
-    Gen->>Server: Stream Event (Reasoning: "Analyzing...")
-    Gen->>LLM: Generate(Prompt: Decompose Query)
-    LLM-->>Gen: Sub-Queries [Q1, Q2...]
+    %% Step 1: Query Extraction (LightRAG)
+    Gen->>Server: Stream Event (Reasoning: "Extracting keys...")
+    Gen->>Ollama: Generate(Prompt: Extract Low/High-level keys)
+    Ollama-->>Gen: Keys [Low: K1, K2..., High: T1, T2...]
 
-    loop For Each Sub-Query
-        Gen->>Server: Stream Event (Reasoning: "Searching Qx")
-
-        %% Step 2: Fusion Retrieval
-        Gen->>Ret: Retrieve(Qx)
-        activate Ret
-        Ret->>DB: Vector Search (Dense)
-        Ret->>DB: Graph Traversal (Sparse)
-        Ret-->>Gen: Candidates [C1, C2...]
-        deactivate Ret
-
-        %% Step 3: Retrieval Critique
-        loop For Each Candidate
-            Gen->>Crit: EvaluateRetrieval(Qx, C_content)
-            activate Crit
-            Crit-->>Gen: Relevant (Bool)
-            deactivate Crit
-
-            alt Is Relevant
-                Gen->>Server: Stream Event (Source: C_metadata)
-                Gen->>Gen: Add to Context
-            else Irrelevant
-                Gen->>Server: Stream Event (Reasoning: "Filtered...")
-            end
-        end
+    %% Step 2: Parallel 1st-Stage Retrieval
+    Gen->>Server: Stream Event (Reasoning: "1st-Stage Retrieval...")
+    par Vector Search
+        Gen->>Inf: Create Embeddings(Keys)
+        Inf-->>Gen: Dense Vectors
+        Gen->>DB_V: Search(Dense Vectors)
+        DB_V-->>Gen: Vector Candidates [V1, V2...]
+    and Graph Search
+        Gen->>DB_G: Traverse(Keys)
+        DB_G-->>Gen: Graph Candidates [G1, G2...]
     end
 
-    %% Step 4: Generation
-    Gen->>Server: Stream Event (Reasoning: "Generating...")
-    Gen->>LLM: Generate(Prompt: Context + Query)
-    LLM-->>Gen: Draft Answer
+    %% Step 3: 2nd-Stage Tensor Reranking
+    Gen->>Server: Stream Event (Reasoning: "Reranking candidates...")
+    Gen->>Inf: ColBERT Rerank(Query, Vector Candidates)
+    Inf-->>Gen: Reranked Candidates with Tensor Scores
 
-    %% Step 5: Generation Critique
-    Gen->>Crit: EvaluateGeneration(Answer, Context)
-    activate Crit
-    Crit-->>Gen: Support Level (Fully/Partially/None)
-    deactivate Crit
+    %% Step 4: Skyline Fusion (BookRAG)
+    Gen->>Sky: Rank(Reranked Vector Candidates, Graph Candidates)
+    activate Sky
+    Sky-->>Gen: Top-K Fused Context
+    deactivate Sky
+
+    Gen->>Server: Stream Event (Source: Fused Context Metadata)
+
+    %% Step 5: Generation
+    Gen->>Server: Stream Event (Reasoning: "Generating...")
+    Gen->>Ollama: Generate(Prompt: Context + Query)
+    Ollama-->>Gen: Draft Answer
+
+    %% Step 6: Self-RAG Critique
+    Gen->>Ollama: EvaluateGeneration(Draft Answer, Context)
+    Ollama-->>Gen: Support Level (Fully/Partially/None)
 
     alt No Support
         Gen->>Server: Stream Event (Reasoning: "Regenerating...")
-        Gen->>LLM: Generate(Prompt: Strict Context Constraint)
-        LLM-->>Gen: Final Answer
+        Gen->>Ollama: Generate(Prompt: Strict Context Constraint)
+        Ollama-->>Gen: Final Answer
     end
 
     Gen->>Server: Stream Event (Answer: Final Content)

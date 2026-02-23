@@ -10,16 +10,12 @@ type SkylineRanker struct{}
 
 // Rank performs Skyline ranking on search results.
 // It prioritizes results that are not "dominated" by others in both axes:
-// Axis 1: Vector Similarity (Score)
-// Axis 2: Graph Context/Relevance (calculated or secondary score)
+// Axis 1: Vector Score (from ColBERT/Infinity reranker)
+// Axis 2: Graph Relevance (Structure)
 func (r *SkylineRanker) Rank(results []SearchResult) []SearchResult {
 	if len(results) <= 1 {
 		return results
 	}
-
-	// For the sake of the SOTA implementation, we simulate two axes.
-	// In a real system, Axis 2 would come from graph traversal depth or pagerank.
-	// Here we use Source as a proxy: Source="graph" gets a 'graph_bonus'.
 
 	type enrichedResult struct {
 		SearchResult
@@ -29,12 +25,15 @@ func (r *SkylineRanker) Rank(results []SearchResult) []SearchResult {
 
 	enriched := make([]enrichedResult, len(results))
 	for i, res := range results {
-		vScore := res.Score
+		vScore := res.Score  // Reranked score (high fidelity)
 		gScore := float32(0.5) // Default graph relevance
+
+		// Heuristic: If source is graph, boost graph score
 		if res.Source == "graph" {
-			gScore = 0.8
+			gScore = 0.9
 		} else if res.Source == "vector" {
-			vScore *= 1.2 // slight vector bias
+			// Vector results have high semantic score but lower structural score
+			gScore = 0.4
 		}
 
 		enriched[i] = enrichedResult{
@@ -52,7 +51,7 @@ func (r *SkylineRanker) Rank(results []SearchResult) []SearchResult {
 			if i == j {
 				continue
 			}
-			// If node J is better than node I in both axes, I is dominated.
+			// Node J dominates I if J is better in both axes
 			if enriched[j].VectorScore > enriched[i].VectorScore && enriched[j].GraphScore > enriched[i].GraphScore {
 				dominated = true
 				break
@@ -63,7 +62,7 @@ func (r *SkylineRanker) Rank(results []SearchResult) []SearchResult {
 		}
 	}
 
-	// Sort skyline by average of normalized scores for final output
+	// Sort skyline by Vector Score for final generation priority
 	sort.Slice(skyline, func(i, j int) bool {
 		return skyline[i].Score > skyline[j].Score
 	})

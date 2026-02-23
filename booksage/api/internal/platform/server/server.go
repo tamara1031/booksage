@@ -16,6 +16,7 @@ import (
 	pb "github.com/booksage/booksage-api/internal/pb/booksage/v1"
 	"github.com/booksage/booksage-api/internal/platform/database/bunstore"
 	"github.com/booksage/booksage-api/internal/platform/embedding"
+	"github.com/booksage/booksage-api/internal/platform/infinity"
 	"github.com/booksage/booksage-api/internal/platform/llm"
 	neo4jpkg "github.com/booksage/booksage-api/internal/platform/neo4j"
 	qdrantpkg "github.com/booksage/booksage-api/internal/platform/qdrant"
@@ -82,6 +83,10 @@ func (s *Server) Run() error {
 	log.Printf("[System] 🛤️  LLM Router initialized (Cloud: %s | Local LLM: %s | Local Embed: %s)",
 		geminiClient.Name(), localLLMClient.Name(), localEmbedClient.Name())
 
+	// Initialize Infinity Tensor Engine
+	tensorClient := infinity.NewClient(s.cfg.Model.InfinityURL)
+	log.Printf("[System] ♾️  Infinity Tensor Engine initialized at %s", s.cfg.Model.InfinityURL)
+
 	// Pull configured Ollama models at startup
 	log.Printf("[System] 📥 Ensuring local models '%s' and '%s' are available...", s.cfg.Model.OllamaLLM, s.cfg.Model.OllamaEmbed)
 	if err := localLLMClient.PullModel(ctx, s.cfg.Model.OllamaLLM); err != nil {
@@ -139,8 +144,8 @@ func (s *Server) Run() error {
 	// Ingestion Service (new async worker)
 	ingestService := ingest.NewIngestionService(sagaOrchestrator, embedBatcher)
 
-	// Fusion Retriever
-	fusionRetriever := query.NewFusionRetriever(qdrantClient, neo4jClient, embedBatcher, llmRouter)
+	// Fusion Retriever (Uses Infinity for Tensors)
+	fusionRetriever := query.NewFusionRetriever(qdrantClient, neo4jClient, tensorClient, llmRouter)
 
 	// Agentic Generator
 	generator := query.NewGenerator(llmRouter, fusionRetriever)
