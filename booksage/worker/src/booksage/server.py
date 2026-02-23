@@ -3,7 +3,6 @@ import logging
 from concurrent.futures import ProcessPoolExecutor
 
 import grpc
-
 from booksage.config import load
 from booksage.handler import BookSageWorker
 from booksage.parser import DocumentParser
