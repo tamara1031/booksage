@@ -8,7 +8,7 @@ RUN go mod download
 COPY . .
 
 # Build the worker binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o bookscout cmd/worker/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o bookscout cmd/bookscout/main.go
 
 FROM gcr.io/distroless/static-debian12
 
