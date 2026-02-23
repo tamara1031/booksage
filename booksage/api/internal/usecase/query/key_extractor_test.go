@@ -6,6 +6,7 @@ import (
 )
 
 func TestDualKeyExtractor_ExtractKeys(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		resp           string
@@ -33,7 +34,9 @@ func TestDualKeyExtractor_ExtractKeys(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Arrange
 			mockClient := &MockLLMClient{
 				GenerateFunc: func(ctx context.Context, prompt string) (string, error) {

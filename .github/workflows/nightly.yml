@@ -1,0 +1,44 @@
+name: Nightly E2E & Security
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Run at 2 AM UTC daily
+  workflow_dispatch:
+
+jobs:
+  e2e-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run E2E Test
+        # This runs docker compose up --build, performing a full system test
+        run: make -C booksage test-large
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy Vulnerability Scanner (API)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'tamara1031/booksage-api:latest'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Run Trivy Vulnerability Scanner (Worker)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'tamara1031/booksage-worker:latest'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'

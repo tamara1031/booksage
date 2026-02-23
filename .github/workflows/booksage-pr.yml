@@ -208,3 +208,33 @@ jobs:
 
       - name: Run Small Tests
         run: make -C booksage test-worker-small
+
+  build-check:
+    needs: changes
+    if: ${{ needs.changes.outputs.api == 'true' || needs.changes.outputs.worker == 'true' || needs.changes.outputs.proto == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API (Check)
+        if: ${{ needs.changes.outputs.api == 'true' || needs.changes.outputs.proto == 'true' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: booksage
+          file: booksage/api/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Worker (Check)
+        if: ${{ needs.changes.outputs.worker == 'true' || needs.changes.outputs.proto == 'true' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: booksage
+          file: booksage/worker/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -45,12 +45,12 @@ image-api-push:
 .PHONY: test-worker-small
 test-worker-small:
 	@echo "==> Running Worker Small Tests"
-	@cd worker && uv run pytest tests/unit/
+	@cd worker && uv run pytest -n auto tests/unit/
 
 .PHONY: test-worker-medium
 test-worker-medium:
 	@echo "==> Running Worker Medium Tests"
-	@cd worker && uv run pytest tests/sut/
+	@cd worker && uv run pytest -n auto tests/sut/
 
 .PHONY: test-worker-large
 test-worker-large:
