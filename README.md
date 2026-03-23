@@ -1,9 +1,13 @@
 # BookSage
 
-![Status](https://img.shields.io/badge/Status-WIP-red)
+![Status](https://img.shields.io/badge/Status-Pending-yellow)
 ![Architecture](https://img.shields.io/badge/Architecture-Go%2BPython_Hybrid-blue)
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8)
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
+
+> [!NOTE]
+> **Project Status: Pending**
+> This project is currently on hold. Progress is expected to resume once the author (tamara1031) acquires the necessary AI inference nodes to complete the local-first architecture.
 
 **BookSage** is an "Optimal Book-based RAG Generation Engine" that fully utilizes Large Language Models (LLMs) and advanced Retrieval-Augmented Generation (RAG) technologies. It specializes in processing book information that has long contexts and complex logical hierarchies.
 
